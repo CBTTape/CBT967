@@ -1,0 +1,75 @@
+/* rexx */
+/*********************************************************************/
+/* The following code is added to ISRUDLS0 for block deletes to      */
+/* process embedded VSAM files without stopping.  This is backwards  */
+/* since this )INIT processing will occur AFTER the initial )PROC.   */
+/* This code is invoked on a re-display of the panel after an error, */
+/* such as an attempt to delete the DATA or INDEX portions of a VSAM */
+/* file.  Upon a re-display of the panel for an error, the command   */
+/* field will be blanked out and an enter key will be simulated with */
+/* a .RESP= 'ENTER' statement.  This will allow the panel to         */
+/* continue processing past the DATA and INDEX portions of VSAM      */
+/* files without stopping.  The drawback is that any other errors    */
+/* will also be bypassed.                                            */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2021/02/12 Conley         Move Rexx code in )INIT section of      */
+/*                           ISRUDSL0 into this panel exit.          */
+/* 2018/12/12 Conley         Initial coding.                         */
+/*********************************************************************/
+call isprexpx('I')
+/*********************************************************************/
+/* Determine the length of zdata, then get the number of lines by    */
+/* integer dividing by 80 and adding 1 (zdata length is not usually  */
+/* a multiple of 80).                                                */
+/*********************************************************************/
+lenzdata = length(zdata)
+#lines = (lenzdata % 80) + 1
+/*********************************************************************/
+/* Loop through each line to parse the data.                         */
+/*********************************************************************/
+do i = 1 to #lines
+/*********************************************************************/
+/* Determine a starting position (startpos) and ending position      */
+/* (endpos) for each line of the display.  Parse out the beginning   */
+/* of zdata (begzdata), the screen line, (scrnline) and the rest of  */
+/* zdata (rstzdata).                                                 */
+/*********************************************************************/
+   endpos   = i * 80
+   startpos = endpos - 79
+   parse var zdata begzdata =(startpos) scrnline =(endpos) rstzdata
+/*********************************************************************/
+/* Parse the screen line into the attribute byte in position 1       */
+/* (attr), command area in positions 2-10 (command), and the rest of */
+/* the screen line (rstline).                                        */
+/*********************************************************************/
+   parse upper var scrnline 1 attr 2 command 11 rstline
+/*********************************************************************/
+/* If the command is USRDEL34, this indicates that the previous      */
+/* IDCAMS DELETE command ended with an error.  To bypass the error,  */
+/* blank out the command and piece zdata back together.  Concatenate */
+/* the beginning of zdata, the attribute byte of the current line,   */
+/* blank out the command, complete the rest of the current line,     */
+/* then complete the rest of zdata.                                  */
+/*********************************************************************/
+   if command = 'USRDEL34 ' then
+      do
+         zdata = begzdata    ||,
+                 attr        ||,
+                 '         ' ||,
+                 rstline     ||,
+                 rstzdata
+/*********************************************************************/
+/* Set the bypass flag and terminate the loop so the .RESP='ENTER'   */
+/* in the )PROC code for ISRUDSL0 can process the next command line  */
+/* on the screen.                                                    */
+/*********************************************************************/
+         usrdlbyp = 'BYPASS'
+         leave i
+      end
+end
+call isprexpx('T')
+exit

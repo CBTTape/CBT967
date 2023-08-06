@@ -1,0 +1,19 @@
+)PANEL KEYLIST (ISRHELP ISR)
+)ATTR
+   @ AREA(SCRL) EXTEND(ON)
+   % TYPE(ET)
+   _ TYPE(NEF) PAD(USER) CAPS(ON)
+   + TYPE(NT)
+   ` TYPE(SAC)
+)BODY EXPAND(\\)
+%TUTORIAL \-\ FORCE Option \-\ TUTORIAL
+%OPTION  ===>_ZCMD                                                             +
+@SAREA1                                                                        @
+)AREA SAREA1
+%
++  The FORCE option will override the user's specification in favor of the
+   specification in the USRCCONF dialog.  FORCE should be used sparingly,
+   such as situations where the installation requires a particular setting
+   to override a user's choice.
+)PROC
+)END

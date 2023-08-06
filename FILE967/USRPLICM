@@ -1,0 +1,40 @@
+/* rexx */
+/*********************************************************************/
+/* This exec will handle highlighting // end-of-line comments in     */
+/* PLI.  This code requires the application of OA62409.              */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2021/12/16 Conley         Initial coding.                         */
+/*********************************************************************/
+call isprexpx('I')
+/*********************************************************************/
+/* We have to add code to handle the // type comment.  We will do    */
+/* that by breaking down zdata into individual lines and looking for */
+/* any // characters that are either not already in a comment or a   */
+/* quoted string.  Anything else will highlight as a comment to the  */
+/* end of the line.                                                  */
+/*********************************************************************/
+#lines = length(zdata) / zwidth
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var zshadow =(strtpos) shaddata =(endpos)
+   compos = pos('//',linedata)
+   if compos > 0 then
+      do
+         compend = compos + 2
+         parse var shaddata =(compos) comshad =(compend)
+         if comshad <> 'QQ' & comshad <> 'CC' then
+            zshadow = overlay(,
+                      copies('C',zwidth - compos),,
+                      zshadow,,
+                      totchar+compos,zwidth - compos)
+      end
+end
+call isprexpx('T')
+exit

@@ -1,0 +1,77 @@
+2023-08-06 08:45:38.774344 - Initialized conversion of CBT967
+2023-08-06 08:45:41.155231 - Received SBGOLOB.CBT506.FILE967 from FILE967.XMI 
+2023-08-06 08:45:41.157864 - Found $$$#DATE.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$$$#DATE
+2023-08-06 08:45:41.158917 - Found $$README.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$$README
+2023-08-06 08:45:41.160137 - Found $CHANGES.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$CHANGES
+2023-08-06 08:45:41.161442 - Found $HIGHLIT.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$HIGHLIT
+2023-08-06 08:45:41.162440 - Found $ISPCMDS.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$ISPCMDS
+2023-08-06 08:45:41.163456 - Found $MANHACJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$MANHACJ
+2023-08-06 08:45:41.164354 - Found $MANHACK.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$MANHACK
+2023-08-06 08:45:41.165275 - Found $SHARZIP.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$SHARZIP
+2023-08-06 08:45:41.166257 - Found $USRCONF.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$USRCONF
+2023-08-06 08:45:41.167155 - Found $34DELET.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/$34DELET
+2023-08-06 08:45:41.168074 - Found @FILE967.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/@FILE967
+2023-08-06 08:45:41.169114 - Found BPXWISH.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/BPXWISH
+2023-08-06 08:45:41.169125 - Found BPXWP99.bin containing application/octet-stream, moved to FILE967/BPXWP99
+2023-08-06 08:45:41.170086 - Found ISH.bin containing application/octet-stream, moved to FILE967/ISH
+2023-08-06 08:45:41.171026 - Found ISHELL.bin containing application/octet-stream, moved to FILE967/ISHELL
+2023-08-06 08:45:41.171935 - Found ISPCMDS.bin containing application/octet-stream, moved to FILE967/ISPCMDS
+2023-08-06 08:45:41.172808 - Found ISR@PRIM.bin containing application/octet-stream, moved to FILE967/ISR@PRIM
+2023-08-06 08:45:41.173876 - Found ISR@PR24.bin containing application/octet-stream, moved to FILE967/ISR@PR24
+2023-08-06 08:45:41.174837 - Found ISREDDE2.bin containing application/octet-stream, moved to FILE967/ISREDDE2
+2023-08-06 08:45:41.175815 - Found ISREDDE4.bin containing application/octet-stream, moved to FILE967/ISREDDE4
+2023-08-06 08:45:41.176731 - Found ISRED224.bin containing application/octet-stream, moved to FILE967/ISRED224
+2023-08-06 08:45:41.177909 - Found ISRED424.bin containing application/octet-stream, moved to FILE967/ISRED424
+2023-08-06 08:45:41.179853 - Found ISRPXASM.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/ISRPXASM
+2023-08-06 08:45:41.179861 - Found ISRUAASE.bin containing application/octet-stream, moved to FILE967/ISRUAASE
+2023-08-06 08:45:41.180650 - Found ISRUAA24.bin containing application/octet-stream, moved to FILE967/ISRUAA24
+2023-08-06 08:45:41.181666 - Found ISRUDSL0.bin containing application/octet-stream, moved to FILE967/ISRUDSL0
+2023-08-06 08:45:41.182563 - Found ISRUDS24.bin containing application/octet-stream, moved to FILE967/ISRUDS24
+2023-08-06 08:45:41.183585 - Found ISRUMVC.bin containing application/octet-stream, moved to FILE967/ISRUMVC
+2023-08-06 08:45:41.184549 - Found ISRUUDL0.bin containing application/octet-stream, moved to FILE967/ISRUUDL0
+2023-08-06 08:45:41.185404 - Found ISRUUD24.bin containing application/octet-stream, moved to FILE967/ISRUUD24
+2023-08-06 08:45:41.186331 - Found ISRUULP.bin containing application/octet-stream, moved to FILE967/ISRUULP
+2023-08-06 08:45:41.187296 - Found ISRUUL24.bin containing application/octet-stream, moved to FILE967/ISRUUL24
+2023-08-06 08:45:41.189101 - Found ISRV01.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/ISRV01
+2023-08-06 08:45:41.189109 - Found SHAREZIP.zip (application/zip), trying to unzip
+2023-08-06 08:45:41.189246 - Found SHAREZIP.zip (application/zip), extracting to CBT967/SHAREZIP
+2023-08-06 08:45:41.246964 - Found UMBPXISJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMBPXISJ
+2023-08-06 08:45:41.248231 - Found UMISCLMJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISCLMJ
+2023-08-06 08:45:41.249222 - Found UMISPCMJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISPCMJ
+2023-08-06 08:45:41.250189 - Found UMISRHIJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRHIJ
+2023-08-06 08:45:41.251171 - Found UMISRPDJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRPDJ
+2023-08-06 08:45:41.252179 - Found UMISRPXJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRPXJ
+2023-08-06 08:45:41.253050 - Found UMISRUDJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRUDJ
+2023-08-06 08:45:41.253968 - Found UMISRUUJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRUUJ
+2023-08-06 08:45:41.254871 - Found UMISRVCJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMISRVCJ
+2023-08-06 08:45:41.255765 - Found UMUSRCFJ.jcl (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/UMUSRCFJ
+2023-08-06 08:45:41.256768 - Found USR@KYWD.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USR@KYWD
+2023-08-06 08:45:41.257707 - Found USRCCONF.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRCCONF
+2023-08-06 08:45:41.258735 - Found USRCCVWK.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRCCVWK
+2023-08-06 08:45:41.259782 - Found USRCMOD.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRCMOD
+2023-08-06 08:45:41.260760 - Found USRDEL34.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRDEL34
+2023-08-06 08:45:41.261732 - Found USREDDEM.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USREDDEM
+2023-08-06 08:45:41.262548 - Found USREDDEX.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USREDDEX
+2023-08-06 08:45:41.263347 - Found USRHCALN.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRHCALN
+2023-08-06 08:45:41.264352 - Found USRHFORC.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRHFORC
+2023-08-06 08:45:41.265340 - Found USRHILIT.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRHILIT
+2023-08-06 08:45:41.266292 - Found USRL00.txt (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRL00
+2023-08-06 08:45:41.266302 - Found USRPCONF.bin containing application/octet-stream, moved to FILE967/USRPCONF
+2023-08-06 08:45:41.268150 - Found USRPLICM.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRPLICM
+2023-08-06 08:45:41.268159 - Found USRPMOD.bin containing application/octet-stream, moved to FILE967/USRPMOD
+2023-08-06 08:45:41.269048 - Found USRPMODQ.bin containing application/octet-stream, moved to FILE967/USRPMODQ
+2023-08-06 08:45:41.270008 - Found USRPMOD1.bin containing application/octet-stream, moved to FILE967/USRPMOD1
+2023-08-06 08:45:41.271076 - Found USRPMOD2.bin containing application/octet-stream, moved to FILE967/USRPMOD2
+2023-08-06 08:45:41.272123 - Found USRPMOD3.bin containing application/octet-stream, moved to FILE967/USRPMOD3
+2023-08-06 08:45:41.273147 - Found USRPMOD4.bin containing application/octet-stream, moved to FILE967/USRPMOD4
+2023-08-06 08:45:41.274447 - Found USRPMOD8.bin containing application/octet-stream, moved to FILE967/USRPMOD8
+2023-08-06 08:45:41.275485 - Found USRPMOD9.bin containing application/octet-stream, moved to FILE967/USRPMOD9
+2023-08-06 08:45:41.277507 - Found USRUDSLI.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRUDSLI
+2023-08-06 08:45:41.278493 - Found USRUDSLP.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRUDSLP
+2023-08-06 08:45:41.278504 - Found USRUMNO2.bin containing application/octet-stream, moved to FILE967/USRUMNO2
+2023-08-06 08:45:41.280349 - Found USRUMVC.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRUMVC
+2023-08-06 08:45:41.281276 - Found USRUUID0.rexx (text/plain) in SBGOLOB.CBT506.FILE967, moved to FILE967/USRUUID0
+2023-08-06 08:45:41.281285 - Found USRUULO2.bin containing application/octet-stream, moved to FILE967/USRUULO2
+2023-08-06 08:45:41.282158 - Found USR0Y002.bin containing application/octet-stream, moved to FILE967/USR0Y002
+2023-08-06 08:45:41.283010 - Found USR0Y004.bin containing application/octet-stream, moved to FILE967/USR0Y004
+2023-08-06 08:45:41.283862 - Found USR0Y007.bin containing application/octet-stream, moved to FILE967/USR0Y007

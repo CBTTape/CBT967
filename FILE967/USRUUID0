@@ -1,0 +1,21 @@
+/* rexx */
+/*********************************************************************/
+/* The following code will reset the user's UID to the default       */
+/* value if the user enters SUPERUSER mode in either ISHELL or ISPF  */
+/* option 3.17.                                                      */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2021/02/14 Conley         Initial coding.                         */
+/*********************************************************************/
+call isprexpx('I')
+call syscalls('ON')
+address syscall 'seteuid' ziniuid
+address syscall 'getuid'
+zusruid = retval
+address syscall 'geteuid'
+zeuid = retval
+call isprexpx('T')
+exit

@@ -1,0 +1,7 @@
+USRL001  'Invalid language "&USRHILNG"' .TYPE=W NOKANA
+'Please enter a valid language:  ACS, CARLA, FLOWASM, FORTRAN, GO, JAVA, ' +
+'JAVASCRIPT, JSON, Kotlin, PANELX, Perl, PHP, PYTHON, R, RUBY, SAS, SHELL, ' +
+'SQL, TYPESCRIPT, or XMLASCII'
+USRL002  'Customize keyword DSN' .TYPE=W NOKANA
+'Default ISPF KEYWORD dataset detected, please modify the USR@KYWD Rexx exec ' +
+'with your actual ISPF KEYWORD dataset name before proceeding with this dialog'
