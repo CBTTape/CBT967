@@ -1,0 +1,54 @@
+/* rexx */
+/*********************************************************************/
+/* This exec is an edit macro to set the appropriate HILITE setting  */
+/* and set NULLS ON STD for languages.                               */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2023/06/18 Conley         Add JAVA to the list of ASCII languages */
+/*                           which will not use HILITE OTHER.        */
+/* 2023/04/22 Conley         Initial coding.                         */
+/*********************************************************************/
+address isredit "MACRO"
+address ispexec "VGET (USRHILNG)"
+select
+   when (usrhilng = 'OFF') then
+      if usrsvlng <> 'XMLASCII' then
+         address isredit "HILITE AUTO"
+   when (usrhilng = 'FLOWASM') then
+      address isredit "HILITE ASM"
+   when (usrhilng = 'PANELX') then
+      address isredit "HILITE PANEL"
+/*********************************************************************/
+/* The following languages support ASCII highlighting, so turn off   */
+/* HILITE for them, otherwise, issue HILITE OTHER to provide basic   */
+/* highlighting for comments, operators, etc.                        */
+/*********************************************************************/
+   when (usrhilng = 'XMLASCII' | usrhilng = 'GO' |,
+         usrhilng = 'PYTHON'   | usrhilng = 'SHELL' |,
+         usrhilng = 'JAVA') then
+      do
+/*********************************************************************/
+/* If EDIT/VIEW is in ASCII mode, the HILITE command will fail, so   */
+/* set CONTROL ERRORS RETURN to ignore any errors, then reset        */
+/* CONTROL ERRORS CANCEL.                                            */
+/*********************************************************************/
+         address ispexec "CONTROL ERRORS RETURN"
+         address isredit "HILITE OFF"
+         address ispexec "CONTROL ERRORS CANCEL"
+      end
+   otherwise
+      do
+/*********************************************************************/
+/* If EDIT/VIEW is in ASCII mode, the HILITE command will fail, so   */
+/* set CONTROL ERRORS RETURN to ignore any errors, then reset        */
+/* CONTROL ERRORS CANCEL.                                            */
+/*********************************************************************/
+         address ispexec "CONTROL ERRORS RETURN"
+         address isredit "HILITE OTHER"
+         address ispexec "CONTROL ERRORS CANCEL"
+      end
+end
+address isredit "NULLS ON STD"

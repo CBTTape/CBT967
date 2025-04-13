@@ -1,0 +1,4206 @@
+/* rexx */
+/*********************************************************************/
+/* This exec will handle highlighting unsupported languages in ISPF  */
+/* EDIT, as a panel exit invoked from the EDIT data panels ISREDDE2  */
+/* or ISREDDE4.                                                      */
+/*                                                                   */
+/* This code is largely based on the groundbreaking work of Pedro    */
+/* Vera at IBM, as detailed in his SHARE presentation "Customizing   */
+/* the ISPF HILITE command", available in member SHAREZIP, with      */
+/* instructions for recreating in $SHARZIP.                          */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2023/06/18 Conley         Modify JAVA highlighting to work in     */
+/*                           both EBCDIC and ASCII mode.  Call       */
+/*                           operhighlite, parenhighlite, and        */
+/*                           quotehighlite to highlight those items. */
+/*                           Correct operator strings for JAVA,      */
+/*                           PYTHON, SHELL, and GO, to properly      */
+/*                           highlight all valid language operators. */
+/* 2023/05/07 Conley         Modify PYTHON highlighting to work in   */
+/*                           both EBCDIC and ASCII mode.  Call       */
+/*                           operhighlite, parenhighlite, and        */
+/*                           quotehighlite to highlight those items. */
+/*                           Add PYTHON built-in functions.          */
+/* 2023/04/16 Conley         Modify SHELL highlighting to add        */
+/*                           quotehighlite routine for quoted        */
+/*                           strings.  Add additional code to        */
+/*                           prevent highlighting keywords in MSG,   */
+/*                           NOTE, etc. lines.                       */
+/* 2022/12/13 Conley         Modify SHELL highlighting to turn off   */
+/*                           HILITE OTHER, since paths ending in     */
+/*                           slash asterisk were being highlighted   */
+/*                           as comments).  Call operhighlite and    */
+/*                           parenhighlite to highlight those items. */
+/* 2022/03/25 Conley         Add PANELX highlighting to extend       */
+/*                           panel highlighting for extra keywords,  */
+/*                           parens, etc.                            */
+/* 2021/12/27 Conley         Interrogate ZHIPAREN to determine if    */
+/*                           parens should be highlighted for        */
+/*                           FLOWASM (requires OA62409).             */
+/* 2021/08/16 Conley         Add R to supported languages.           */
+/* 2021/04/29 Liu/Conley     Fix HIGHLITE GO to work in an ASCII     */
+/*                           editor environment.                     */
+/* 2021/04/28 Liu/Conley     Fix HIGHLITE SAS for Top of Data,       */
+/*                           Bottom of Data, message, and note       */
+/*                           lines in the editor.                    */
+/* 2021/04/27 Liu/Conley     Add SAS keywords.                       */
+/*                           Do not translate '%' to blank for SAS.  */
+/*                           Fix HIGHLITE for SAS % keywords already */
+/*                           highlighted by HILITE OTHER.            */
+/*                           Thanks to Thomas Liu for these          */
+/*                           contributions to CUCI.                  */
+/* 2021/03/19 Conley         Add ACS to supported languages.         */
+/* 2021/03/12 Conley         Remove deprecated HTML tags and empty   */
+/*                           tags from XMLASCII keyword list.        */
+/* 2021/03/09 Conley         Improve atr. and clr. stem variable     */
+/*                           initialization.                         */
+/* 2021/03/09 Conley         Since HILITE OTHER is disabled in ASCII */
+/*                           mode, extend XMLASCII highlighting by   */
+/*                           adding support for:                     */
+/*                           - Comment blocks (turquoise)            */
+/*                           - XML tags (pink)                       */
+/*                           - Quoted strings (white)                */
+/* 2021/02/15 Conley         Add Kotlin to supported languages.      */
+/* 2021/02/07 Conley         Add XMLASCII to supported languages.    */
+/* 2021/01/19 Conley         Add Perl to supported languages.        */
+/*                           Add SAS to supported languages.         */
+/* 2021/01/16 Prins/Conley   Use loops to assign atr. and clr. stem  */
+/*                           variables.  Will improve readability    */
+/*                           and ease of adding new languages.       */
+/*                           Thanks to Robert Prins for this idea.   */
+/* 2020/11/23 Conley         Add new keywords for Java 9 and 10.     */
+/*                           Add Java string and math methods.       */
+/* 2020/10/27 Conley         Add TypeScript to supported languages.  */
+/* 2020/10/26 Conley         Add PHP to supported languages.         */
+/* 2020/10/23 Conley         Add JavaScript to supported languages.  */
+/* 2020/10/11 Conley         Correct errors in FLOWASM highlighting. */
+/*                           Add code to bypass highlighting for Top */
+/*                           of Data and Bottom of Data lines.       */
+/* 2020/07/03 Conley         Add FLOWASM to supported languages.     */
+/* 2020/05/12 Conley         Add Google Go to supported languages.   */
+/* 2019/12/28 Conley         Initial coding.                         */
+/*********************************************************************/
+/* NOTES:  1) Modules affected/used                                  */
+/*            - USRHILIT ... REXX program (Highlight new languages)  */
+/*            - USREDDEM ... REXX program (set HILITE, NULLS ON STD) */
+/*            - USREDDEX ... REXX program (HIGHLITE, prepend path)   */
+/*            - ISREDDE2 ... ISPF panel (Action Bar)                 */
+/*            - ISREDDE4 ... ISPF panel (No Action Bar)              */
+/*            - USRL00 ..... ISPF messages (Valid languages)         */
+/*         2) To change which Edit panel is used (Action Bar         */
+/*            ISREDDE2 or No Action Bar ISREDDE4), edit a member,    */
+/*            type in EDITSET (EDSET), and select ("/") the below    */
+/*            parameter:                                             */
+/*                                                                   */
+/*            _ Remove action bars in ISPF edit and view panels      */
+/*                                                                   */
+/*            Selecting this parm will present ISREDDE4 as the edit  */
+/*            panel, deselecting it will present ISREDDE2.           */
+/*                                                                   */
+/*            Thanks to Bruce Koss for providing this documentation  */
+/*            box.  Thanks to Bruce Koss and Thomas Liu for pointing */
+/*            out that ISREDDE4 should also be supported for CUCI    */
+/*            highlighting.                                          */
+/*********************************************************************/
+call isprexpx('I')
+/*********************************************************************/
+/* There are three arrays which control the highlighting process,    */
+/* kw (keyword), atr (attribute), and clr (color).  The kw array     */
+/* holds blank-delimited keywords, the atr array holds the ISPF      */
+/* default attributes for the associated keyword (typically 'D'),    */
+/* and the clr array holds the highlighting color for the associated */
+/* keyword (typically 'R' for RED).  The atr and clr arrays are now  */
+/* initialized in loops after the keyword array has been built.      */
+/*                                                                   */
+/* The languages currently supported are:                            */
+/*                                                                   */
+/* ACS                                                               */
+/* CARLa                                                             */
+/* FLOWASM                                                           */
+/* FORTRAN                                                           */
+/* Go                                                                */
+/* JAVA                                                              */
+/* JavaScript                                                        */
+/* JSON                                                              */
+/* Kotlin                                                            */
+/* PANELX                                                            */
+/* Perl                                                              */
+/* PHP                                                               */
+/* PYTHON                                                            */
+/* R                                                                 */
+/* RUBY                                                              */
+/* SAS                                                               */
+/* SHELL                                                             */
+/* SQL                                                               */
+/* TypeScript                                                        */
+/* XMLASCII                                                          */
+/*********************************************************************/
+kw.0 = 0
+atr. = ''
+clr. = ''
+select
+   when (usrhilng = 'OFF') then
+      exit
+   when (usrhilng = 'ACS') then
+      do
+         kw.0    = 82
+         kw.1    = ' &ACCT_JOB '
+         kw.2    = ' &ACCT_STEP '
+         kw.3    = ' &ACSENVIR '
+         kw.4    = ' &ACSENVR2 '
+         kw.5    = ' &ALLVOL '
+         kw.6    = ' &ANYVOL '
+         kw.7    = ' &APPLIC '
+         kw.8    = ' &BLKSIZE '
+         kw.9    = ' &DATACLAS '
+         kw.10   = ' &DATE '
+         kw.11   = ' &DAYOFWEEK '
+         kw.12   = ' &DB2SSID '
+         kw.13   = ' &DD '
+         kw.14   = ' &DEF_DATACLAS '
+         kw.15   = ' &DEF_MGMTCLAS '
+         kw.16   = ' &DEF_STORCLAS '
+         kw.17   = ' &DSKEYLBL '
+         kw.18   = ' &DSN '
+         kw.19   = ' &DSNTYPE '
+         kw.20   = ' &DSN_VERSION '
+         kw.21   = ' &DSORG '
+         kw.22   = ' &DSOWNER '
+         kw.23   = ' &DSTYPE '
+         kw.24   = ' &EATTR '
+         kw.25   = ' &EXPDT '
+         kw.26   = ' &FILENUM '
+         kw.27   = ' &GROUP '
+         kw.28   = ' &HLQ '
+         kw.29   = ' &JOB '
+         kw.30   = ' &LABEL '
+         kw.31   = ' &LIBNAME '
+         kw.32   = ' &LLQ '
+         kw.33   = ' &MAXGENS '
+         kw.34   = ' &MAXSIZE '
+         kw.35   = ' &MEMHLQ '
+         kw.36   = ' &MEMLLQ '
+         kw.37   = ' &MEMN '
+         kw.38   = ' &MEMNQUAL '
+         kw.39   = ' &MGMTCLAS '
+         kw.40   = ' &MSPDEST '
+         kw.41   = ' &MSPARM '
+         kw.42   = ' &MSPOLICY '
+         kw.43   = ' &MSPOOL '
+         kw.44   = ' &NQUAL '
+         kw.45   = ' &NVOL '
+         kw.46   = ' &PGM '
+         kw.47   = ' &RECORG '
+         kw.48   = ' &RETPD '
+         kw.49   = ' &SECLABL '
+         kw.50   = ' &SECOND_QTY '
+         kw.51   = ' &SIZE '
+         kw.52   = ' &SPACE_TYPE '
+         kw.53   = ' &STEP '
+         kw.54   = ' &STORCLAS '
+         kw.55   = ' &STORGRP '
+         kw.56   = ' &SYSNAME '
+         kw.57   = ' &SYSPLEX '
+         kw.58   = ' &TIME '
+         kw.59   = ' &UNIT '
+         kw.60   = ' &USER '
+         kw.61   = ' &USER_ACSVAR '
+         kw.62   = ' &XMODE '
+         kw.63   = ' CODE '
+         kw.64   = ' DATACLAS '
+         kw.65   = ' DO '
+         kw.66   = ' ELSE '
+         kw.67   = ' END '
+         kw.68   = ' EXCLUDE '
+         kw.69   = ' EXIT '
+         kw.70   = ' FILTLIST '
+         kw.71   = ' IF '
+         kw.72   = ' INCLUDE '
+         kw.73   = ' MGMTCLAS '
+         kw.74   = ' OTHERWISE '
+         kw.75   = ' PROC '
+         kw.76   = ' SELECT '
+         kw.77   = ' SET '
+         kw.78   = ' STORCLAS '
+         kw.79   = ' STORGRP '
+         kw.80   = ' THEN '
+         kw.81   = ' WHEN '
+         kw.82   = ' WRITE '
+         /* Highlite & variables in Pink */
+         do i = 1 to 62
+            clr.i = copies('P',(length(kw.i)-2))
+         end
+      end
+   when (usrhilng = 'CARLA') then
+      do
+         kw.0    = 46
+         kw.1    = ' ALLOCATE '
+         kw.2    = ' BDAMQSAM '
+         kw.3    = ' BUNDLE '
+         kw.4    = ' CAPS '
+         kw.5    = ' COMPAREOPT '
+         kw.6    = ' CONVERSION '
+         kw.7    = ' COPY '
+         kw.8    = ' DEBUG '
+         kw.9    = ' DEFAULT '
+         kw.10   = ' DEFINE '
+         kw.11   = ' DEFSENS '
+         kw.12   = ' DEFTYPE '
+         kw.13   = ' DISPLAY '
+         kw.14   = ' DSUMMARY '
+         kw.15   = ' ENDBUNDLE '
+         kw.16   = ' ENDMERGE '
+         kw.17   = ' EXCLUDE '
+         kw.18   = ' FILEOPTION '
+         kw.19   = ' IMBED '
+         kw.20   = ' INCLUDE '
+         kw.21   = ' LANGUAGE '
+         kw.22   = ' LIMIT '
+         kw.23   = ' LIST '
+         kw.24   = ' MARGINS '
+         kw.25   = ' MENU '
+         kw.26   = ' MERGE '
+         kw.27   = ' MERGELIST '
+         kw.28   = ' MERGERULE '
+         kw.29   = ' MOVE '
+         kw.30   = ' NEWLIST '
+         kw.31   = ' OPTION '
+         kw.32   = ' PRINT '
+         kw.33   = ' REMOVE '
+         kw.34   = ' REPORT '
+         kw.35   = ' SELECT '
+         kw.36   = ' SHOW '
+         kw.37   = ' SIMULATE '
+         kw.38   = ' SITE_SEVERITY '
+         kw.39   = ' SMFCACHE '
+         kw.40   = ' SORTLIST '
+         kw.41   = ' STANDARD '
+         kw.42   = ' SUMMARY '
+         kw.43   = ' SUPPRESS '
+         kw.44   = ' SYMBOLIC '
+         kw.45   = ' UNLOAD '
+         kw.46   = ' VERIFY '
+      end
+   when (usrhilng = 'FLOWASM') then
+      do
+         kw.0    = 0
+      end
+   when (usrhilng = 'FORTRAN') then
+      do
+         kw.0    = 145
+         kw.1    = ' ABSTRACT '
+         kw.2    = ' ACCESS '
+         kw.3    = ' ACTION '
+         kw.4    = ' ADVANCE '
+         kw.5    = ' ALL '
+         kw.6    = ' ALLOCATABLE '
+         kw.7    = ' ALLOCATE '
+         kw.8    = ' ASSIGN '
+         kw.9    = ' ASSIGNMENT '
+         kw.10   = ' ASSOCIATE '
+         kw.11   = ' ASYNCHRONOUS '
+         kw.12   = ' BACKSPACE '
+         kw.13   = ' BIND '
+         kw.14   = ' BLANK '
+         kw.15   = ' BLOCK '
+         kw.16   = ' CALL '
+         kw.17   = ' CASE '
+         kw.18   = ' CHARACTER '
+         kw.19   = ' CLASS '
+         kw.20   = ' CLOSE '
+         kw.21   = ' CODIMENSION '
+         kw.22   = ' COMMON '
+         kw.23   = ' COMPLEX '
+         kw.24   = ' CONCURRENT '
+         kw.25   = ' CONTAINS '
+         kw.26   = ' CONTIGUOUS '
+         kw.27   = ' CONTINUE '
+         kw.28   = ' CRITICAL '
+         kw.29   = ' CYCLE '
+         kw.30   = ' DATA '
+         kw.31   = ' DEALLOCATE '
+         kw.32   = ' DEFAULT '
+         kw.33   = ' DEFERRED '
+         kw.34   = ' DELIM '
+         kw.35   = ' DIMENSION '
+         kw.36   = ' DIRECT '
+         kw.37   = ' DO '
+         kw.38   = ' DOUBLE '
+         kw.39   = ' ELSE '
+         kw.40   = ' ELSEWHERE '
+         kw.41   = ' END '
+         kw.42   = ' ENDFILE '
+         kw.43   = ' ENTRY '
+         kw.44   = ' ENUM '
+         kw.45   = ' ENUMERATOR '
+         kw.46   = ' EOR '
+         kw.47   = ' EQUIVALENCE '
+         kw.48   = ' ERR '
+         kw.49   = ' ERROR '
+         kw.50   = ' EXIST '
+         kw.51   = ' EXIT '
+         kw.52   = ' EXTENDS '
+         kw.53   = ' EXTERNAL '
+         kw.54   = ' FILE '
+         kw.55   = ' FINAL '
+         kw.56   = ' FLUSH '
+         kw.57   = ' FMT '
+         kw.58   = ' FORM '
+         kw.59   = ' FORMAT '
+         kw.60   = ' FORMATTED '
+         kw.61   = ' FUNCTION '
+         kw.62   = ' GENERIC '
+         kw.63   = ' GO '
+         kw.64   = ' IF '
+         kw.65   = ' IMAGES '
+         kw.66   = ' IMPLICIT '
+         kw.67   = ' IMPORT '
+         kw.68   = ' IN '
+         kw.69   = ' INOUT '
+         kw.70   = ' INQUIRE '
+         kw.71   = ' INTEGER '
+         kw.72   = ' INTENT '
+         kw.73   = ' INTERFACE '
+         kw.74   = ' INTRINSIC '
+         kw.75   = ' IOLENGTH '
+         kw.76   = ' IOSTAT '
+         kw.77   = ' KIND '
+         kw.78   = ' LEN '
+         kw.79   = ' LOCK '
+         kw.80   = ' LOGICAL '
+         kw.81   = ' MEMORY '
+         kw.82   = ' MODULE '
+         kw.83   = ' NAME '
+         kw.84   = ' NAMED '
+         kw.85   = ' NAMELIST '
+         kw.86   = ' NEXTREC '
+         kw.87   = ' NML '
+         kw.88   = ' NON_OVERRIDABLE '
+         kw.89   = ' NONE '
+         kw.90   = ' NOPASS '
+         kw.91   = ' NULLIFY '
+         kw.92   = ' NUMBER '
+         kw.93   = ' ONLY '
+         kw.94   = ' OPEN '
+         kw.95   = ' OPENED '
+         kw.96   = ' OPERATOR '
+         kw.97   = ' OPTIONAL '
+         kw.98   = ' OUT '
+         kw.99   = ' PAD '
+         kw.100  = ' PARAMETER '
+         kw.101  = ' PASS '
+         kw.102  = ' PAUSE '
+         kw.103  = ' POINTER '
+         kw.104  = ' POSITION '
+         kw.105  = ' PRECISION '
+         kw.106  = ' PRINT '
+         kw.107  = ' PRIVATE '
+         kw.108  = ' PROCEDURE '
+         kw.109  = ' PROGRAM '
+         kw.110  = ' PROTECTED '
+         kw.111  = ' PUBLIC '
+         kw.112  = ' READ '
+         kw.113  = ' READWRITE '
+         kw.114  = ' REAL '
+         kw.115  = ' REC '
+         kw.116  = ' RECL '
+         kw.117  = ' RECURSIVE '
+         kw.118  = ' RESULT '
+         kw.119  = ' RETURN '
+         kw.120  = ' REWIND '
+         kw.121  = ' SAVE '
+         kw.122  = ' SELECT '
+         kw.123  = ' SEQUENCE  '
+         kw.124  = ' SEQUENTIAL '
+         kw.125  = ' SIZE '
+         kw.126  = ' STAT '
+         kw.127  = ' STATUS '
+         kw.128  = ' STOP '
+         kw.129  = ' SUBMODULE '
+         kw.130  = ' SUBROUTINE '
+         kw.131  = ' SYNC '
+         kw.132  = ' TARGET '
+         kw.133  = ' THEN '
+         kw.134  = ' TO '
+         kw.135  = ' TYPE '
+         kw.136  = ' UNFORMATTED '
+         kw.137  = ' UNIT '
+         kw.138  = ' UNLOCK '
+         kw.139  = ' USE '
+         kw.140  = ' VALUE '
+         kw.141  = ' VOLATILE '
+         kw.142  = ' WAIT '
+         kw.143  = ' WHERE '
+         kw.144  = ' WHILE '
+         kw.145  = ' WRITE '
+      end
+   when (usrhilng = 'GO') then
+      do
+         kw.0    = 25
+         kw.1    = ' BREAK '
+         kw.2    = ' CASE '
+         kw.3    = ' CHAN '
+         kw.4    = ' CONST '
+         kw.5    = ' CONTINUE '
+         kw.6    = ' DEFAULT '
+         kw.7    = ' DEFER '
+         kw.8    = ' ELSE '
+         kw.9    = ' FALLTHROUGH '
+         kw.10   = ' FOR '
+         kw.11   = ' FUNC '
+         kw.12   = ' GO '
+         kw.13   = ' GOTO '
+         kw.14   = ' IF '
+         kw.15   = ' IMPORT '
+         kw.16   = ' INTERFACE '
+         kw.17   = ' MAP '
+         kw.18   = ' PACKAGE '
+         kw.19   = ' RANGE '
+         kw.20   = ' RETURN '
+         kw.21   = ' SELECT '
+         kw.22   = ' STRUCT '
+         kw.23   = ' SWITCH '
+         kw.24   = ' TYPE '
+         kw.25   = ' VAR '
+      end
+   when (usrhilng = 'JAVA') then
+      do
+         kw.0    = 131
+         kw.1    = ' ABSTRACT '
+         kw.2    = ' ASSERT '
+         kw.3    = ' BOOLEAN '
+         kw.4    = ' BREAK '
+         kw.5    = ' BYTE '
+         kw.6    = ' CASE '
+         kw.7    = ' CATCH '
+         kw.8    = ' CHAR '
+         kw.9    = ' CLASS '
+         kw.10   = ' CONST '
+         kw.11   = ' CONTINUE '
+         kw.12   = ' DEFAULT '
+         kw.13   = ' DO '
+         kw.14   = ' DOUBLE '
+         kw.15   = ' ELSE '
+         kw.16   = ' ENUM '
+         kw.17   = ' EXTENDS '
+         kw.18   = ' FALSE '
+         kw.19   = ' FINAL '
+         kw.20   = ' FINALLY '
+         kw.21   = ' FLOAT '
+         kw.22   = ' FOR '
+         kw.23   = ' GOTO '
+         kw.24   = ' IF '
+         kw.25   = ' IMPLEMENTS '
+         kw.26   = ' IMPORT '
+         kw.27   = ' INSTANCEOF '
+         kw.28   = ' INT '
+         kw.29   = ' INTERFACE '
+         kw.30   = ' LONG '
+         kw.31   = ' NATIVE '
+         kw.32   = ' NEW '
+         kw.33   = ' NULL '
+         kw.34   = ' PACKAGE '
+         kw.35   = ' PRIVATE '
+         kw.36   = ' PROTECTED '
+         kw.37   = ' PUBLIC '
+         kw.38   = ' RETURN '
+         kw.39   = ' SHORT '
+         kw.40   = ' STATIC '
+         kw.41   = ' STRICTFP '
+         kw.42   = ' SUPER '
+         kw.43   = ' SWITCH '
+         kw.44   = ' SYNCHRONIZED '
+         kw.45   = ' THIS '
+         kw.46   = ' THROW '
+         kw.47   = ' THROWS '
+         kw.48   = ' TRANSIENT '
+         kw.49   = ' TRUE '
+         kw.50   = ' TRY '
+         kw.51   = ' VOID '
+         kw.52   = ' VOLATILE '
+         kw.53   = ' WHILE '
+         kw.54   = ' EXPORTS '
+         kw.55   = ' MODULE '
+         kw.56   = ' REQUIRES '
+         kw.57   = ' VAR '
+         kw.58   = ' CHARAT '
+         kw.59   = ' CODEPOINTAT '
+         kw.60   = ' CODEPOINTBEFORE '
+         kw.61   = ' CODEPOINTCOUNT '
+         kw.62   = ' COMPARETO '
+         kw.63   = ' COMPARETOIGNORECASE '
+         kw.64   = ' CONCAT '
+         kw.65   = ' CONTAINS '
+         kw.66   = ' CONTENTEQUALS '
+         kw.67   = ' COPYVALUEOF '
+         kw.68   = ' ENDSWITH '
+         kw.69   = ' EQUALS '
+         kw.70   = ' EQUALSIGNORECASE '
+         kw.71   = ' FORMAT '
+         kw.72   = ' GETBYTES '
+         kw.73   = ' GETCHARS '
+         kw.74   = ' HASHCODE '
+         kw.75   = ' INDEXOF '
+         kw.76   = ' INTERN '
+         kw.77   = ' ISEMPTY '
+         kw.78   = ' LASTINDEXOF '
+         kw.79   = ' LENGTH '
+         kw.80   = ' MATCHES '
+         kw.81   = ' OFFSETBYCODEPOINTS '
+         kw.82   = ' REGIONMATCHES '
+         kw.83   = ' REPLACE '
+         kw.84   = ' REPLACEFIRST '
+         kw.85   = ' REPLACEALL '
+         kw.86   = ' SPLIT '
+         kw.87   = ' STARTSWITH '
+         kw.88   = ' SUBSEQUENCE '
+         kw.89   = ' SUBSTRING '
+         kw.90   = ' TOCHARARRAY '
+         kw.91   = ' TOLOWERCASE '
+         kw.92   = ' TOSTRING '
+         kw.93   = ' TOUPPERCASE '
+         kw.94   = ' TRIM '
+         kw.95   = ' VALUEOF '
+         kw.96   = ' ABS '
+         kw.97   = ' ACOS '
+         kw.98   = ' ASIN '
+         kw.99   = ' ATAN '
+         kw.100  = ' ATAN2 '
+         kw.101  = ' CBRT '
+         kw.102  = ' CEIL '
+         kw.103  = ' COPYSIGN '
+         kw.104  = ' COS '
+         kw.105  = ' COSH '
+         kw.106  = ' EXP '
+         kw.107  = ' EXPM1 '
+         kw.108  = ' FLOOR '
+         kw.109  = ' GETEXPONENT '
+         kw.110  = ' HYPOT '
+         kw.111  = ' IEEEREMAINDER '
+         kw.112  = ' LOG '
+         kw.113  = ' LOG10 '
+         kw.114  = ' LOG1P '
+         kw.115  = ' MAX '
+         kw.116  = ' MIN '
+         kw.117  = ' NEXTAFTER '
+         kw.118  = ' NEXTUP '
+         kw.119  = ' POW '
+         kw.120  = ' RANDOM '
+         kw.121  = ' ROUND '
+         kw.122  = ' RINT '
+         kw.123  = ' SIGNUM '
+         kw.124  = ' SIN '
+         kw.125  = ' SINH '
+         kw.126  = ' SQRT '
+         kw.127  = ' TAN '
+         kw.128  = ' TANH '
+         kw.129  = ' TODEGREES '
+         kw.130  = ' TORADIANS '
+         kw.131  = ' ULP '
+      end
+   when (usrhilng = 'JAVASCRIPT') then
+      do
+         kw.0   = 64
+         kw.1   = ' ABSTRACT '
+         kw.2   = ' ARGUMENTS '
+         kw.3   = ' AWAIT '
+         kw.4   = ' BOOLEAN '
+         kw.5   = ' BREAK '
+         kw.6   = ' BYTE '
+         kw.7   = ' CASE '
+         kw.8   = ' CATCH '
+         kw.9   = ' CHAR '
+         kw.10  = ' CLASS '
+         kw.11  = ' CONST '
+         kw.12  = ' CONTINUE '
+         kw.13  = ' DEBUGGER '
+         kw.14  = ' DEFAULT '
+         kw.15  = ' DELETE '
+         kw.16  = ' DO '
+         kw.17  = ' DOUBLE '
+         kw.18  = ' ELSE '
+         kw.19  = ' ENUM '
+         kw.20  = ' EVAL '
+         kw.21  = ' EXPORT '
+         kw.22  = ' EXTENDS '
+         kw.23  = ' FALSE '
+         kw.24  = ' FINAL '
+         kw.25  = ' FINALLY '
+         kw.26  = ' FLOAT '
+         kw.27  = ' FOR '
+         kw.28  = ' FUNCTION '
+         kw.29  = ' GOTO '
+         kw.30  = ' IF '
+         kw.31  = ' IMPLEMENTS '
+         kw.32  = ' IMPORT '
+         kw.33  = ' IN '
+         kw.34  = ' INSTANCEOF '
+         kw.35  = ' INT '
+         kw.36  = ' INTERFACE '
+         kw.37  = ' LET '
+         kw.38  = ' LONG '
+         kw.39  = ' NATIVE '
+         kw.40  = ' NEW '
+         kw.41  = ' NULL '
+         kw.42  = ' PACKAGE '
+         kw.43  = ' PRIVATE '
+         kw.44  = ' PROTECTED '
+         kw.45  = ' PUBLIC '
+         kw.46  = ' RETURN '
+         kw.47  = ' SHORT '
+         kw.48  = ' STATIC '
+         kw.49  = ' SUPER '
+         kw.50  = ' SWITCH '
+         kw.51  = ' SYNCHRONIZED '
+         kw.52  = ' THIS '
+         kw.53  = ' THROW '
+         kw.54  = ' THROWS '
+         kw.55  = ' TRANSIENT '
+         kw.56  = ' TRUE '
+         kw.57  = ' TRY '
+         kw.58  = ' TYPEOF '
+         kw.59  = ' VAR '
+         kw.60  = ' VOID '
+         kw.61  = ' VOLATILE '
+         kw.62  = ' WHILE '
+         kw.63  = ' WITH '
+         kw.64  = ' YIELD '
+      end
+   when (usrhilng = 'JSON') then
+      kw.0 = 0
+   when (usrhilng = 'KOTLIN') then
+      do
+         kw.0   = 54
+         kw.1   = ' AS '
+         kw.2   = ' BREAK '
+         kw.3   = ' CLASS '
+         kw.4   = ' CONTINUE '
+         kw.5   = ' DO '
+         kw.6   = ' ELSE '
+         kw.7   = ' FALSE '
+         kw.8   = ' FOR '
+         kw.9   = ' FUN '
+         kw.10  = ' IF '
+         kw.11  = ' IN '
+         kw.12  = ' INTERFACE '
+         kw.13  = ' IS '
+         kw.14  = ' NULL '
+         kw.15  = ' OBJECT '
+         kw.16  = ' PACKAGE '
+         kw.17  = ' RETURN '
+         kw.18  = ' SUPER '
+         kw.19  = ' THIS '
+         kw.20  = ' THROW '
+         kw.21  = ' TRUE '
+         kw.22  = ' TRY '
+         kw.23  = ' TYPEALIAS '
+         kw.24  = ' TYPEOF '
+         kw.25  = ' VAL '
+         kw.26  = ' VAR '
+         kw.27  = ' WHEN '
+         kw.28  = ' WHILE '
+         kw.29  = ' ARRAYOF '
+         kw.30  = ' ARRAYLISTOF '
+         kw.31  = ' BYTEARRAYOF '
+         kw.32  = ' BOOLEANARRAYOF '
+         kw.33  = ' CHARARRAYOF '
+         kw.34  = ' CONSTRUCTOR '
+         kw.35  = ' ENUM '
+         kw.36  = ' FIRST '
+         kw.37  = ' IMPORT '
+         kw.38  = ' INTARRAYOF '
+         kw.39  = ' INTERNAL '
+         kw.40  = ' ISEMPTY '
+         kw.41  = ' LAST '
+         kw.42  = ' LISTOF '
+         kw.43  = ' LONGARRAYOF '
+         kw.44  = ' MAIN '
+         kw.45  = ' OPEN '
+         kw.46  = ' OVERRIDE '
+         kw.47  = ' PRINT '
+         kw.48  = ' PRINTLN '
+         kw.49  = ' PRIVATE '
+         kw.50  = ' PROTECTED '
+         kw.51  = ' PUBLIC '
+         kw.52  = ' REPEAT '
+         kw.53  = ' SHORTARRAYOF '
+         kw.54  = ' STEP '
+      end
+   when (usrhilng = 'PANELX') then
+      do
+         kw.0   = 171
+         kw.1   = ' )BODY '
+         kw.2   = ' )AREA '
+         kw.3   = ' )ABC '
+         kw.4   = ' )ABCINIT '
+         kw.5   = ' )ABCPROC '
+         kw.6   = ' )ATTR '
+         kw.7   = ' )CCSID '
+         kw.8   = ' )END '
+         kw.9   = ' )FIELD '
+         kw.10  = ' )HELP '
+         kw.11  = ' )INEXIT '
+         kw.12  = ' )INIT '
+         kw.13  = ' )LIST '
+         kw.14  = ' )MODEL '
+         kw.15  = ' )PANEL '
+         kw.16  = ' )PNTS '
+         kw.17  = ' )PROC '
+         kw.18  = ' )REINIT '
+         kw.19  = ' .ALARM '
+         kw.20  = ' .ATTR '
+         kw.21  = ' .ATTRCHAR '
+         kw.22  = ' .AUTOSEL '
+         kw.23  = ' .CSRPOS '
+         kw.24  = ' .CSRROW '
+         kw.25  = ' .CURSOR '
+         kw.26  = ' .HELP '
+         kw.27  = ' .HHELP '
+         kw.28  = ' .MSG '
+         kw.29  = ' .NRET '
+         kw.30  = ' .PFKEY '
+         kw.31  = ' .RESP '
+         kw.32  = ' .TRAIL '
+         kw.33  = ' .ZVARS '
+         kw.34  = ' *ENDREXX '
+         kw.35  = ' *REXX '
+         kw.36  = ' ACC '
+         kw.37  = ' ACTION '
+         kw.38  = ' ADDSOSI '
+         kw.39  = ' ALPHA '
+         kw.40  = ' ALPHAB '
+         kw.41  = ' AREA '
+         kw.42  = ' ATTN '
+         kw.43  = ' ASIS '
+         kw.44  = ' BIT '
+         kw.45  = ' CAPS '
+         kw.46  = ' CKBOX '
+         kw.47  = ' COMBO '
+         kw.48  = ' CSRGRP '
+         kw.49  = ' COLOR '
+         kw.50  = ' CUADYN '
+         kw.51  = ' DATAMOD '
+         kw.52  = ' DBCS '
+         kw.53  = ' DDLIST '
+         kw.54  = ' DELSOSI '
+         kw.55  = ' DESC '
+         kw.56  = ' DEPTH '
+         kw.57  = ' DSN '
+         kw.58  = ' DSNAME '
+         kw.59  = ' DSNAMEF '
+         kw.60  = ' DSNAMEFM '
+         kw.61  = ' DSNAMEPQ '
+         kw.62  = ' DSNAMEQ '
+         kw.63  = ' DYNAMIC '
+         kw.64  = ' EBCDIC '
+         kw.65  = ' ELSE '
+         kw.66  = ' END '
+         kw.67  = ' ENTER '
+         kw.68  = ' ENUM '
+         kw.69  = ' EXTEND '
+         kw.70  = ' FIELD '
+         kw.71  = ' FILEID '
+         kw.72  = ' FORMAT '
+         kw.73  = ' GE '
+         kw.74  = ' GOTO '
+         kw.75  = ' GRAPHIC '
+         kw.76  = ' HEX '
+         kw.77  = ' HILITE '
+         kw.78  = ' IDATE '
+         kw.79  = ' IF '
+         kw.80  = ' IMAGE '
+         kw.81  = ' IMAGEP '
+         kw.82  = ' IMBLK '
+         kw.83  = ' IND '
+         kw.84  = ' INCLUDE '
+         kw.85  = ' INTENS '
+         kw.86  = ' IPADDR4 '
+         kw.87  = ' ITIME '
+         kw.88  = ' JDATE '
+         kw.89  = ' JSTD '
+         kw.90  = ' JUST '
+         kw.91  = ' LEN '
+         kw.92  = ' LENGTH '
+         kw.93  = ' LCOL '
+         kw.94  = ' LIB '
+         kw.95  = ' LIND '
+         kw.96  = ' LIST '
+         kw.97  = ' LISTBOX '
+         kw.98  = ' LISTV '
+         kw.99  = ' LISTVX '
+         kw.100 = ' LISTX '
+         kw.101 = ' LVLINE '
+         kw.102 = ' MIX '
+         kw.103 = ' MNEM '
+         kw.104 = ' MSG '
+         kw.105 = ' NAME '
+         kw.106 = ' NAMEF '
+         kw.107 = ' NB '
+         kw.108 = ' NOJUMP '
+         kw.109 = ' NONBLANK '
+         kw.110 = ' NUM '
+         kw.111 = ' NUMERIC '
+         kw.112 = ' ONEBYTE '
+         kw.113 = ' OUTLINE '
+         kw.114 = ' PAD '
+         kw.115 = ' PADC '
+         kw.116 = ' PANEL '
+         kw.117 = ' PANEXIT '
+         kw.118 = ' PARM '
+         kw.119 = ' PAS '
+         kw.120 = ' PASSTHRU '
+         kw.121 = ' PDC '
+         kw.122 = ' PDSEP '
+         kw.123 = ' PFK '
+         kw.124 = ' PICT '
+         kw.125 = ' PICTCN '
+         kw.126 = ' PLACE '
+         kw.127 = ' PROFILE '
+         kw.128 = ' RADIO '
+         kw.129 = ' RANGE '
+         kw.130 = ' REFRESH '
+         kw.131 = ' REP '
+         kw.132 = ' RCOL '
+         kw.133 = ' RIND '
+         kw.134 = ' RUN '
+         kw.135 = ' SCALE '
+         kw.136 = ' SCROLL '
+         kw.137 = ' SCRL '
+         kw.138 = ' SHARED '
+         kw.139 = ' SIND '
+         kw.140 = ' SKIP '
+         kw.141 = ' STDDATE '
+         kw.142 = ' STDTIME '
+         kw.143 = ' SYMDEF '
+         kw.144 = ' SYMNAMES '
+         kw.145 = ' TEXT '
+         kw.146 = ' TOG '
+         kw.147 = ' TRANS '
+         kw.148 = ' TRUNC '
+         kw.149 = ' TWOBYTE '
+         kw.150 = ' TYPE '
+         kw.151 = ' UNAVAIL '
+         kw.152 = ' UPPER '
+         kw.153 = ' USERMOD '
+         kw.154 = ' VAL '
+         kw.155 = ' VAR '
+         kw.156 = ' VEDIT '
+         kw.157 = ' VER '
+         kw.158 = ' VGET '
+         kw.159 = ' VPUT '
+         kw.160 = ' VSYM '
+         kw.161 = ' WIDTH '
+         kw.162 = ' AND '
+         kw.163 = ' EQ '
+         kw.164 = ' GE '
+         kw.165 = ' GT '
+         kw.166 = ' LE '
+         kw.167 = ' LT '
+         kw.168 = ' NE '
+         kw.169 = ' NG '
+         kw.170 = ' NL '
+         kw.171 = ' OR '
+         clr.162 = 'OOO'
+         clr.163 = 'OO'
+         clr.164 = 'OO'
+         clr.165 = 'OO'
+         clr.166 = 'OO'
+         clr.167 = 'OO'
+         clr.168 = 'OO'
+         clr.169 = 'OO'
+         clr.170 = 'OO'
+         clr.171 = 'OO'
+      end
+   when (usrhilng = 'PERL') then
+      do
+         kw.0   = 269
+         kw.1   = ' -A '
+         kw.2   = ' -B '
+         kw.3   = ' -C '
+         kw.4   = ' -D '
+         kw.5   = ' -E '
+         kw.6   = ' -F '
+         kw.7   = ' -G '
+         kw.8   = ' -K '
+         kw.9   = ' -L '
+         kw.10  = ' -M '
+         kw.11  = ' -O '
+         kw.12  = ' -P '
+         kw.13  = ' -R '
+         kw.14  = ' -S '
+         kw.15  = ' -T '
+         kw.16  = ' -U '
+         kw.17  = ' -W '
+         kw.18  = ' -X '
+         kw.19  = ' -Z '
+         kw.20  = ' __DATA__ '
+         kw.21  = ' __END__ '
+         kw.22  = ' __FILE__ '
+         kw.23  = ' __LINE__ '
+         kw.24  = ' __PACKAGE__ '
+         kw.25  = ' ABS '
+         kw.26  = ' ACCEPT '
+         kw.27  = ' ALARM '
+         kw.28  = ' AND '
+         kw.29  = ' ATAN2 '
+         kw.30  = ' AUTOLOAD '
+         kw.31  = ' BEGIN '
+         kw.32  = ' BIND '
+         kw.33  = ' BINMODE '
+         kw.35  = ' BLESS '
+         kw.35  = ' BREAK '
+         kw.36  = ' CALLER '
+         kw.37  = ' CHDIR '
+         kw.38  = ' CHECK '
+         kw.39  = ' CHMOD '
+         kw.40  = ' CHOMP '
+         kw.41  = ' CHOP '
+         kw.42  = ' CHOWN '
+         kw.43  = ' CHR '
+         kw.44  = ' CHROOT '
+         kw.45  = ' CLOSE '
+         kw.46  = ' CLOSEDIR '
+         kw.47  = ' CMP '
+         kw.48  = ' CONNECT '
+         kw.49  = ' CONTINUE '
+         kw.50  = ' CORE '
+         kw.51  = ' COS '
+         kw.52  = ' CRYPT '
+         kw.53  = ' DBMCLOSE '
+         kw.54  = ' DBMOPEN '
+         kw.55  = ' DEFINED '
+         kw.57  = ' DELETE '
+         kw.56  = ' DESTROY '
+         kw.58  = ' DIE '
+         kw.59  = ' DO '
+         kw.60  = ' DUMP '
+         kw.61  = ' EACH '
+         kw.62  = ' ELSE '
+         kw.63  = ' ELSIF '
+         kw.64  = ' END '
+         kw.65  = ' ENDGRENT '
+         kw.66  = ' ENDHOSTENT '
+         kw.67  = ' ENDNETENT '
+         kw.68  = ' ENDPROTOENT '
+         kw.69  = ' ENDPWENT '
+         kw.70  = ' ENDSERVENT '
+         kw.71  = ' EOF '
+         kw.72  = ' EQ '
+         kw.73  = ' EVAL '
+         kw.74  = ' EXEC '
+         kw.75  = ' EXISTS '
+         kw.76  = ' EXIT '
+         kw.77  = ' EXP '
+         kw.78  = ' FCNTL '
+         kw.79  = ' FILENO '
+         kw.80  = ' FLOCK '
+         kw.81  = ' FOR '
+         kw.82  = ' FOREACH '
+         kw.83  = ' FORK '
+         kw.84  = ' FORMAT '
+         kw.86  = ' FORMLINE '
+         kw.86  = ' GE '
+         kw.87  = ' GETC '
+         kw.88  = ' GETGRENT '
+         kw.89  = ' GETGRGID '
+         kw.90  = ' GETGRNAM '
+         kw.91  = ' GETHOSTBYADDR '
+         kw.92  = ' GETHOSTBYNAME '
+         kw.93  = ' GETHOSTENT '
+         kw.94  = ' GETLOGIN '
+         kw.95  = ' GETNETBYADDR '
+         kw.96  = ' GETNETBYNAME '
+         kw.97  = ' GETNETENT '
+         kw.98  = ' GETPEERNAME '
+         kw.99  = ' GETPGRP '
+         kw.100 = ' GETPPID '
+         kw.101 = ' GETPRIORITY '
+         kw.102 = ' GETPROTOBYNAME '
+         kw.103 = ' GETPROTOBYNUMBER '
+         kw.104 = ' GETPROTOENT '
+         kw.105 = ' GETPWENT '
+         kw.106 = ' GETPWNAM '
+         kw.107 = ' GETPWUID '
+         kw.108 = ' GETSERVBYNAME '
+         kw.109 = ' GETSERVBYPORT '
+         kw.110 = ' GETSERVENT '
+         kw.111 = ' GETSOCKNAME '
+         kw.112 = ' GETSOCKOPT '
+         kw.113 = ' GIVEN '
+         kw.114 = ' GLOB '
+         kw.115 = ' GMTIME '
+         kw.116 = ' GOTO '
+         kw.117 = ' GREP '
+         kw.118 = ' GT '
+         kw.119 = ' HEX '
+         kw.120 = ' IF '
+         kw.121 = ' INDEX '
+         kw.122 = ' INIT '
+         kw.123 = ' INT '
+         kw.124 = ' IOCTL '
+         kw.125 = ' JOIN '
+         kw.126 = ' KEYS '
+         kw.127 = ' KILL '
+         kw.128 = ' LAST '
+         kw.129 = ' LC '
+         kw.130 = ' LCFIRST '
+         kw.131 = ' LE '
+         kw.132 = ' LENGTH '
+         kw.133 = ' LINK '
+         kw.134 = ' LISTEN '
+         kw.135 = ' LOCAL '
+         kw.136 = ' LOCALTIME '
+         kw.137 = ' LOCK '
+         kw.138 = ' LOG '
+         kw.139 = ' LSTAT '
+         kw.140 = ' LT '
+         kw.141 = ' M '
+         kw.142 = ' MAP '
+         kw.143 = ' MKDIR '
+         kw.144 = ' MSGCTL '
+         kw.145 = ' MSGGET '
+         kw.146 = ' MSGRCV '
+         kw.147 = ' MSGSND '
+         kw.148 = ' MY '
+         kw.149 = ' NE '
+         kw.150 = ' NEXT '
+         kw.151 = ' NO '
+         kw.152 = ' NOT '
+         kw.153 = ' OCT '
+         kw.154 = ' OPEN '
+         kw.155 = ' OPENDIR '
+         kw.156 = ' OR '
+         kw.157 = ' ORD '
+         kw.158 = ' OUR '
+         kw.159 = ' PACK '
+         kw.160 = ' PACKAGE '
+         kw.161 = ' PIPE '
+         kw.162 = ' POP '
+         kw.163 = ' POS '
+         kw.164 = ' PRINT '
+         kw.165 = ' PRINTF '
+         kw.166 = ' PROTOTYPE '
+         kw.167 = ' PUSH '
+         kw.168 = ' Q '
+         kw.169 = ' QQ '
+         kw.170 = ' QR '
+         kw.171 = ' QUOTEMETA '
+         kw.172 = ' QW '
+         kw.173 = ' QX '
+         kw.174 = ' RAND '
+         kw.175 = ' READ '
+         kw.176 = ' READDIR '
+         kw.177 = ' READLINE '
+         kw.178 = ' READLINK '
+         kw.179 = ' READPIPE '
+         kw.180 = ' RECV '
+         kw.181 = ' REDO '
+         kw.182 = ' REF '
+         kw.183 = ' RENAME '
+         kw.184 = ' REQUIRE '
+         kw.185 = ' RESET '
+         kw.186 = ' RETURN '
+         kw.187 = ' REVERSE '
+         kw.188 = ' REWINDDIR '
+         kw.189 = ' RINDEX '
+         kw.190 = ' RMDIR '
+         kw.191 = ' S '
+         kw.192 = ' SAY '
+         kw.193 = ' SCALAR '
+         kw.194 = ' SEEK '
+         kw.195 = ' SEEKDIR '
+         kw.196 = ' SELECT '
+         kw.197 = ' SEMCTL '
+         kw.198 = ' SEMGET '
+         kw.199 = ' SEMOP '
+         kw.200 = ' SEND '
+         kw.201 = ' SETGRENT '
+         kw.202 = ' SETHOSTENT '
+         kw.203 = ' SETNETENT '
+         kw.204 = ' SETPGRP '
+         kw.205 = ' SETPRIORITY '
+         kw.206 = ' SETPROTOENT '
+         kw.207 = ' SETPWENT '
+         kw.208 = ' SETSERVENT '
+         kw.209 = ' SETSOCKOPT '
+         kw.210 = ' SHIFT '
+         kw.211 = ' SHMCTL '
+         kw.212 = ' SHMGET '
+         kw.213 = ' SHMREAD '
+         kw.214 = ' SHMWRITE '
+         kw.215 = ' SHUTDOWN '
+         kw.216 = ' SIN '
+         kw.217 = ' SLEEP '
+         kw.218 = ' SOCKET '
+         kw.219 = ' SOCKETPAIR '
+         kw.220 = ' SORT '
+         kw.221 = ' SPLICE '
+         kw.222 = ' SPLIT '
+         kw.223 = ' SPRINTF '
+         kw.224 = ' SQRT '
+         kw.225 = ' SRAND '
+         kw.226 = ' STAT '
+         kw.227 = ' STATE '
+         kw.228 = ' STUDY '
+         kw.229 = ' SUB '
+         kw.230 = ' SUBSTR '
+         kw.231 = ' SYMLINK '
+         kw.232 = ' SYSCALL '
+         kw.233 = ' SYSOPEN '
+         kw.234 = ' SYSREAD '
+         kw.235 = ' SYSSEEK '
+         kw.236 = ' SYSTEM '
+         kw.237 = ' SYSWRITE '
+         kw.238 = ' TELL '
+         kw.239 = ' TELLDIR '
+         kw.240 = ' TIE '
+         kw.241 = ' TIED '
+         kw.242 = ' TIME '
+         kw.243 = ' TIMES '
+         kw.244 = ' TR '
+         kw.245 = ' TRUNCATE '
+         kw.246 = ' UC '
+         kw.247 = ' UCFIRST '
+         kw.248 = ' UMASK '
+         kw.249 = ' UNDEF '
+         kw.250 = ' UNITCHECK '
+         kw.251 = ' UNLESS '
+         kw.252 = ' UNLINK '
+         kw.253 = ' UNPACK '
+         kw.254 = ' UNSHIFT '
+         kw.255 = ' UNTIE '
+         kw.256 = ' UNTIL '
+         kw.257 = ' USE '
+         kw.258 = ' UTIME '
+         kw.259 = ' VALUES '
+         kw.260 = ' VEC '
+         kw.261 = ' WAIT '
+         kw.262 = ' WAITPID '
+         kw.263 = ' WANTARRAY '
+         kw.264 = ' WARN '
+         kw.265 = ' WHEN '
+         kw.266 = ' WHILE '
+         kw.267 = ' WRITE '
+         kw.268 = ' XOR '
+         kw.269 = ' Y '
+      end
+   when (usrhilng = 'PHP') then
+      do
+         kw.0   = 73
+         kw.1   = ' ABSTRACT '
+         kw.2   = ' AND '
+         kw.3   = ' AS '
+         kw.4   = ' BREAK '
+         kw.5   = ' CALLABLE '
+         kw.6   = ' CASE '
+         kw.7   = ' CATCH '
+         kw.8   = ' CLASS '
+         kw.9   = ' CLONE '
+         kw.10  = ' CONST '
+         kw.11  = ' CONTINUE '
+         kw.12  = ' DECLARE '
+         kw.13  = ' DEFAULT '
+         kw.14  = ' DO '
+         kw.15  = ' ECHO '
+         kw.16  = ' ELSE '
+         kw.17  = ' ELSEIF '
+         kw.18  = ' EMPTY '
+         kw.19  = ' ENDDECLARE '
+         kw.20  = ' ENDFOR '
+         kw.21  = ' ENDFOREACH '
+         kw.22  = ' ENDIF '
+         kw.23  = ' ENDSWITCH '
+         kw.24  = ' ENDWHILE '
+         kw.25  = ' EXTENDS '
+         kw.26  = ' FINAL '
+         kw.27  = ' FINALLY '
+         kw.28  = ' FN '
+         kw.29  = ' FOR '
+         kw.30  = ' FOREACH '
+         kw.31  = ' FUNCTION '
+         kw.32  = ' GLOBAL '
+         kw.33  = ' GOTO '
+         kw.34  = ' IF '
+         kw.35  = ' IMPLEMENTS '
+         kw.36  = ' INCLUDE '
+         kw.37  = ' INCLUDE_ONCE '
+         kw.38  = ' INSTANCEOF '
+         kw.39  = ' INSTEADOF '
+         kw.40  = ' INTERFACE '
+         kw.41  = ' ISSET '
+         kw.42  = ' LIST '
+         kw.43  = ' NAMESPACE '
+         kw.44  = ' NEW '
+         kw.45  = ' OR '
+         kw.46  = ' PRINT '
+         kw.47  = ' PRIVATE '
+         kw.48  = ' PROTECTED '
+         kw.49  = ' PUBLIC '
+         kw.50  = ' REQUIRE '
+         kw.51  = ' REQUIRE_ONCE '
+         kw.52  = ' RETURN '
+         kw.53  = ' STATIC '
+         kw.54  = ' SWITCH '
+         kw.55  = ' THROW '
+         kw.56  = ' TRAIT '
+         kw.57  = ' TRY '
+         kw.58  = ' UNSET '
+         kw.59  = ' USE '
+         kw.60  = ' VAR '
+         kw.61  = ' WHILE '
+         kw.62  = ' XOR '
+         kw.63  = ' YIELD '
+         kw.64  = ' YIELD FROM '
+         kw.65  = ' __HALT_COMPILER '
+         kw.66  = ' __CLASS__ '
+         kw.67  = ' __DIR__ '
+         kw.68  = ' __FILE__ '
+         kw.69  = ' __FUNCTION__ '
+         kw.70  = ' __LINE__ '
+         kw.71  = ' __METHOD__ '
+         kw.72  = ' __NAMESPACE__ '
+         kw.73  = ' __TRAIT__ '
+      end
+   when (usrhilng = 'PYTHON') then
+      do
+         kw.0   = 101
+         kw.1   = ' AND '
+         kw.2   = ' AS '
+         kw.3   = ' ASSERT '
+         kw.4   = ' BREAK '
+         kw.5   = ' CLASS '
+         kw.6   = ' CONTINUE '
+         kw.7   = ' DEF '
+         kw.8   = ' DEL '
+         kw.9   = ' ELIF '
+         kw.10  = ' ELSE '
+         kw.11  = ' EXCEPT '
+         kw.12  = ' FALSE '
+         kw.13  = ' FINALLY '
+         kw.14  = ' FOR '
+         kw.15  = ' FROM '
+         kw.16  = ' GLOBAL '
+         kw.17  = ' IF '
+         kw.18  = ' IMPORT '
+         kw.19  = ' IN '
+         kw.20  = ' IS '
+         kw.21  = ' LAMBDA '
+         kw.22  = ' NONE '
+         kw.23  = ' NONLOCAL '
+         kw.24  = ' NOT '
+         kw.25  = ' OR '
+         kw.26  = ' PASS '
+         kw.27  = ' RAISE '
+         kw.28  = ' RETURN '
+         kw.29  = ' TRUE '
+         kw.30  = ' TRY '
+         kw.31  = ' WHILE '
+         kw.32  = ' WITH '
+         kw.33  = ' YIELD '
+         kw.34  = ' ABS '
+         kw.35  = ' ALL '
+         kw.36  = ' ANY '
+         kw.37  = ' ASCII '
+         kw.38  = ' BIN '
+         kw.39  = ' BOOL '
+         kw.40  = ' BYTEARRAY '
+         kw.41  = ' BYTES '
+         kw.42  = ' CALLABLE '
+         kw.43  = ' CHR '
+         kw.44  = ' CLASSMETHOD '
+         kw.45  = ' COMPILE '
+         kw.46  = ' COMPLEX '
+         kw.47  = ' DELATTR '
+         kw.48  = ' DICT '
+         kw.49  = ' DIR '
+         kw.50  = ' DIVMOD '
+         kw.51  = ' ENUMERATE '
+         kw.52  = ' EVAL '
+         kw.53  = ' EXEC '
+         kw.54  = ' FILTER '
+         kw.55  = ' FLOAT '
+         kw.56  = ' FORMAT '
+         kw.57  = ' FROZENSET '
+         kw.58  = ' GETATTR '
+         kw.59  = ' GLOBALS '
+         kw.60  = ' HASATTR '
+         kw.61  = ' HASH '
+         kw.62  = ' HELP '
+         kw.63  = ' HEX '
+         kw.64  = ' ID '
+         kw.65  = ' INPUT '
+         kw.66  = ' INT '
+         kw.67  = ' ISINSTANCE '
+         kw.68  = ' ISSUBCLASS '
+         kw.69  = ' ITER '
+         kw.70  = ' LEN '
+         kw.71  = ' LIST '
+         kw.72  = ' LOCALS '
+         kw.73  = ' MAP '
+         kw.74  = ' MAX '
+         kw.75  = ' MEMORYVIEW '
+         kw.76  = ' MIN '
+         kw.77  = ' NEXT '
+         kw.78  = ' OBJECT '
+         kw.79  = ' OCT '
+         kw.80  = ' OPEN '
+         kw.81  = ' ORD '
+         kw.82  = ' POW '
+         kw.83  = ' PRINT '
+         kw.84  = ' PROPERTY '
+         kw.85  = ' RANGE '
+         kw.86  = ' RAW_INPUT '
+         kw.87  = ' REPR '
+         kw.88  = ' REVERSED '
+         kw.89  = ' ROUND '
+         kw.90  = ' SET '
+         kw.91  = ' SETATTR '
+         kw.92  = ' SLICE '
+         kw.93  = ' SORTED '
+         kw.94  = ' STATICMETHOD '
+         kw.95  = ' STR '
+         kw.96  = ' SUM '
+         kw.97  = ' SUPER '
+         kw.98  = ' TUPLE '
+         kw.99  = ' TYPE '
+         kw.100 = ' VARS '
+         kw.101 = ' ZIP '
+      end
+   when (usrhilng = 'R') then
+      do
+         kw.0   = 66
+         kw.1   = ' break '
+         kw.2   = ' else '
+         kw.3   = ' FALSE '
+         kw.4   = ' for '
+         kw.5   = ' function '
+         kw.6   = ' if '
+         kw.7   = ' in '
+         kw.8   = ' INF '
+         kw.9   = ' NA '
+         kw.10  = ' NaN '
+         kw.11  = ' NA_character_ '
+         kw.12  = ' NA_complex_ '
+         kw.13  = ' NA_integer_ '
+         kw.14  = ' NA_real_ '
+         kw.15  = ' next '
+         kw.16  = ' NULL '
+         kw.17  = ' repeat '
+         kw.18  = ' switch '
+         kw.19  = ' TRUE '
+         kw.10  = ' abs '
+         kw.11  = ' sqrt '
+         kw.12  = ' ceiling '
+         kw.13  = ' floor '
+         kw.14  = ' trunc '
+         kw.15  = ' round '
+         kw.16  = ' signif '
+         kw.17  = ' cos '
+         kw.18  = ' sin '
+         kw.19  = ' tan '
+         kw.20  = ' acos '
+         kw.21  = ' cosh '
+         kw.22  = ' acosh '
+         kw.23  = ' log '
+         kw.24  = ' log10 '
+         kw.25  = ' exp '
+         kw.26  = ' substr '
+         kw.27  = ' grep '
+         kw.28  = ' ignore.case '
+         kw.29  = ' fixed '
+         kw.30  = ' sub '
+         kw.31  = ' strsplit '
+         kw.32  = ' paste '
+         kw.33  = ' toupper '
+         kw.34  = ' tolower '
+         kw.35  = ' dnorm '
+         kw.36  = ' pnorm '
+         kw.37  = ' qnorm '
+         kw.38  = ' min '
+         kw.39  = ' max '
+         kw.40  = ' m '
+         kw.41  = ' dbinom '
+         kw.42  = ' pbinom '
+         kw.43  = ' qbinom '
+         kw.44  = ' rbinom '
+         kw.45  = ' dpois '
+         kw.46  = ' ppois '
+         kw.47  = ' qpois '
+         kw.48  = ' rpois '
+         kw.49  = ' dunif '
+         kw.50  = ' punif '
+         kw.51  = ' qunif '
+         kw.52  = ' runif '
+         kw.53  = ' mean '
+         kw.54  = ' trim '
+         kw.55  = ' na.rm '
+         kw.56  = ' sd '
+         kw.57  = ' median '
+         kw.58  = ' quantile '
+         kw.59  = ' range '
+         kw.60  = ' sum '
+         kw.61  = ' diff '
+         kw.62  = ' scale '
+         kw.63  = ' center '
+         kw.64  = ' seq '
+         kw.65  = ' rep '
+         kw.66  = ' cut '
+      end
+   when (usrhilng = 'RUBY') then
+      do
+         kw.0   = 43
+         kw.1   = ' __ENCODING__ '
+         kw.2   = ' __LINE__ '
+         kw.3   = ' __FILE__ '
+         kw.4   = ' BEGIN '
+         kw.5   = ' END '
+         kw.6   = ' ALIAS '
+         kw.7   = ' AND '
+         kw.8   = ' BREAK '
+         kw.9   = ' CASE '
+         kw.10  = ' CLASS '
+         kw.11  = ' DEF '
+         kw.12  = ' DEFINED? '
+         kw.13  = ' DO '
+         kw.14  = ' ELSE '
+         kw.15  = ' ELSIF '
+         kw.16  = ' END '
+         kw.17  = ' ENSURE '
+         kw.18  = ' FALSE '
+         kw.19  = ' FOR '
+         kw.20  = ' IF '
+         kw.21  = ' IN '
+         kw.22  = ' MODULE '
+         kw.23  = ' NEXT '
+         kw.24  = ' NIL '
+         kw.25  = ' NOT '
+         kw.26  = ' OR '
+         kw.27  = ' REDO '
+         kw.28  = ' RESCUE '
+         kw.29  = ' RETRY '
+         kw.30  = ' RETURN '
+         kw.31  = ' SELF '
+         kw.32  = ' SUPER '
+         kw.33  = ' THEN '
+         kw.34  = ' TRUE '
+         kw.35  = ' UNDEF '
+         kw.36  = ' UNLESS '
+         kw.37  = ' UNTIL '
+         kw.38  = ' WHEN '
+         kw.39  = ' WHILE '
+         kw.40  = ' YIELD '
+         kw.41  = ' PUTS '
+         kw.42  = ' PRINT '
+         kw.43  = ' __END__ '
+      end
+   when (usrhilng = 'SAS') then
+      do
+         kw.0   = 901
+         kw.1   = ' %INCLUDE '
+         kw.2   = ' %LIST '
+         kw.3   = ' %RUN '
+         kw.4   = ' ABORT '
+         kw.5   = ' ADDMATRIX '
+         kw.6   = ' ALSO '
+         kw.7   = ' APPEND '
+         kw.8   = ' ARRAY '
+         kw.9   = ' ATTRIB '
+         kw.10  = ' AUTHLIB '
+         kw.11  = ' BREAK '
+         kw.12  = ' BY '
+         kw.13  = ' CALENDAR '
+         kw.14  = ' CALL '
+         kw.15  = ' CALLRFC '
+         kw.16  = ' CARDS '
+         kw.17  = ' CARDS4 '
+         kw.18  = ' CARSURVEY '
+         kw.19  = ' CATNAME '
+         kw.20  = ' CATALOG '
+         kw.21  = ' CENSUS '
+         kw.22  = ' CHARITY '
+         kw.23  = ' CHART '
+         kw.24  = ' CHECKPOINT '
+         kw.25  = ' CHOL '
+         kw.26  = ' CIMPORT '
+         kw.27  = ' COLUMNS '
+         kw.28  = ' COMPARE '
+         kw.29  = ' COMPUTE '
+         kw.30  = ' COMPUTED '
+         kw.31  = ' CONTENTS '
+         kw.32  = ' CONTINUE '
+         kw.33  = ' CONTROL '
+         kw.34  = ' CONVERT '
+         kw.35  = ' COPY '
+         kw.36  = ' CORR '
+         kw.37  = ' CPORT '
+         kw.38  = ' CUSTOMER_RESPONSE '
+         kw.39  = ' CV2VIEW '
+         kw.40  = ' C16PORT '
+         kw.41  = ' DATA '
+         kw.42  = ' DATALINES '
+         kw.43  = ' DATALINES4 '
+         kw.44  = ' DATASETS '
+         kw.45  = ' DATEKEYS '
+         kw.46  = ' DECLARE '
+         kw.47  = ' DEFINITION '
+         kw.48  = ' DELETE '
+         kw.49  = ' DESCRIBE '
+         kw.50  = ' DET '
+         kw.51  = ' DISPLAY '
+         kw.52  = ' DJIA '
+         kw.53  = ' DM '
+         kw.54  = ' DO '
+         kw.55  = ' DOCUMENT '
+         kw.56  = ' DROP '
+         kw.57  = ' DSNEXST '
+         kw.58  = ' DSTODS2 '
+         kw.59  = ' DS2 '
+         kw.60  = ' DYNAMIC_ARRAY '
+         kw.61  = ' EDUCATION '
+         kw.62  = ' ELEMMULT '
+         kw.63  = ' ELSE '
+         kw.64  = ' EMPDATA '
+         kw.65  = ' END '
+         kw.66  = ' ENDSAS '
+         kw.67  = ' ENERGY '
+         kw.68  = ' ERROR '
+         kw.69  = ' EXECUTE '
+         kw.70  = ' EXECUTE_ALWAYS '
+         kw.71  = ' EXP '
+         kw.72  = ' EXPLODE '
+         kw.73  = ' EXPLORE '
+         kw.74  = ' EXPMATRIX '
+         kw.75  = ' EXPORT '
+         kw.76  = ' EXPREV '
+         kw.77  = ' FCMP '
+         kw.78  = ' FEDSQL '
+         kw.79  = ' FILE '
+         kw.80  = ' FILENAME '
+         kw.81  = ' FILLMATRIX '
+         kw.82  = ' FMTC2ITM '
+         kw.83  = ' FONTREG '
+         kw.84  = ' FOOTNOTE '
+         kw.85  = ' FORMAT '
+         kw.86  = ' FORMATS '
+         kw.87  = ' FORMS '
+         kw.88  = ' FREQ '
+         kw.89  = ' FSDEVICE '
+         kw.90  = ' FSLIST '
+         kw.91  = ' GCHART '
+         kw.92  = ' GEOCODE '
+         kw.93  = ' GINSIDE '
+         kw.94  = ' GO '
+         kw.95  = ' GOTO '
+         kw.96  = ' GPLOT '
+         kw.97  = ' GPROJECT '
+         kw.98  = ' GREDUCE '
+         kw.99  = ' GREMOVE '
+         kw.100 = ' GROC '
+         kw.101 = ' GROOVY '
+         kw.102 = ' HADOOP '
+         kw.103 = ' HDMD '
+         kw.104 = ' HPBIN '
+         kw.105 = ' HPCORR '
+         kw.106 = ' HPDMDB '
+         kw.107 = ' HPDS2 '
+         kw.108 = ' HPIMPUTE '
+         kw.109 = ' HPSAMPLE '
+         kw.110 = ' HPSUMMARY '
+         kw.111 = ' HTTP '
+         kw.112 = ' IF '
+         kw.113 = ' IDENTITY '
+         kw.114 = ' IMPORT '
+         kw.115 = ' INFILE '
+         kw.116 = ' INFOMAPS '
+         kw.117 = ' INFORMAT '
+         kw.118 = ' INPUT '
+         kw.119 = ' INV '
+         kw.120 = ' INVCDF '
+         kw.121 = ' ISNULL '
+         kw.122 = ' JAVAINFO '
+         kw.123 = ' JSON '
+         kw.124 = ' KEEP '
+         kw.125 = ' LABEL '
+         kw.126 = ' LEAVE '
+         kw.127 = ' LENGTH '
+         kw.128 = ' LIBNAME '
+         kw.129 = ' LIBRARY '
+         kw.130 = ' LIMMOMENT '
+         kw.131 = ' LINK '
+         kw.132 = ' LIST '
+         kw.133 = ' LOAD '
+         kw.134 = ' LOCK '
+         kw.135 = ' LOSTCARD '
+         kw.136 = ' LUA '
+         kw.137 = ' MATCH_11 '
+         kw.138 = ' MAPIMPORT '
+         kw.139 = ' MEANS '
+         kw.140 = ' MERGE '
+         kw.141 = ' MESSAGES '
+         kw.142 = ' METADATA '
+         kw.143 = ' METALIB '
+         kw.144 = ' METAOPERATE '
+         kw.145 = ' MIGRATE '
+         kw.146 = ' MISSING '
+         kw.147 = ' MODIFY '
+         kw.148 = ' MULT '
+         kw.149 = ' ODSLIST '
+         kw.150 = ' ODSTABLE '
+         kw.151 = ' ODSTEXT '
+         kw.152 = ' OPTIONS '
+         kw.153 = ' OPTLOAD '
+         kw.154 = ' OPTSAVE '
+         kw.155 = ' OUTPUT '
+         kw.156 = ' PAGE '
+         kw.157 = ' PDS '
+         kw.158 = ' PDSCOPY '
+         kw.159 = ' PLOT '
+         kw.160 = ' PMENU '
+         kw.161 = ' POWER '
+         kw.162 = ' PRESENV '
+         kw.163 = ' PRINT '
+         kw.164 = ' PRINTTO '
+         kw.165 = ' PROC '
+         kw.166 = ' PROCLIB.DELAY '
+         kw.167 = ' PROCLIB.EMP95 '
+         kw.168 = ' PROCLIB.EMP96 '
+         kw.169 = ' PROCLIB.INTERNAT '
+         kw.170 = ' PROCLIB.LAKES '
+         kw.171 = ' PROCLIB.MARCH '
+         kw.172 = ' PROCLIB.PAYLIST2 '
+         kw.173 = ' PROCLIB.PAYROLL '
+         kw.174 = ' PROCLIB.PAYROLL2 '
+         kw.175 = ' PROCLIB.SCHEDULE '
+         kw.176 = ' PROCLIB.STAFF '
+         kw.177 = ' PROCLIB.STAFF2 '
+         kw.178 = ' PROCLIB.SUPERV '
+         kw.179 = ' PRODUCT_STATUS '
+         kw.180 = ' PROFILE '
+         kw.181 = ' PROMPTER '
+         kw.182 = ' PROTO '
+         kw.183 = ' PRTDEF '
+         kw.184 = ' PRTEXP '
+         kw.185 = ' PUT '
+         kw.186 = ' PUTLOG '
+         kw.187 = ' PWENCODE '
+         kw.188 = ' QDEVICE '
+         kw.189 = ' RADIO '
+         kw.190 = ' RANK '
+         kw.191 = ' READ_ARRAY '
+         kw.192 = ' REDIRECT '
+         kw.193 = ' REGISTRY '
+         kw.194 = ' RELEASE '
+         kw.195 = ' REMOVE '
+         kw.196 = ' RENAME '
+         kw.197 = ' REPLACE '
+         kw.198 = ' REPORT '
+         kw.199 = ' RETAIN '
+         kw.200 = ' RETURN '
+         kw.201 = ' ROPTIONS '
+         kw.202 = ' RUN '
+         kw.203 = ' RUN_MACRO '
+         kw.204 = ' RUN_SASFILE '
+         kw.205 = ' SALES '
+         kw.206 = ' SASFILE '
+         kw.207 = ' SAVE '
+         kw.208 = ' SCAPROC '
+         kw.209 = ' SCOREACCEL '
+         kw.210 = ' SELECT '
+         kw.211 = ' SELECTION '
+         kw.212 = ' SET '
+         kw.213 = ' SETNULL '
+         kw.214 = ' SGDESIGN '
+         kw.215 = ' SGMAP '
+         kw.216 = ' SGPANEL '
+         kw.217 = ' SGPIE '
+         kw.218 = ' SGPLOT '
+         kw.219 = ' SGRENDER '
+         kw.220 = ' SGSCATTER '
+         kw.221 = ' SKIP '
+         kw.222 = ' SOAP '
+         kw.223 = ' SOLVE '
+         kw.224 = ' SORT '
+         kw.225 = ' SOURCE '
+         kw.226 = ' SQL '
+         kw.227 = ' SQOOP '
+         kw.228 = ' STANDARD '
+         kw.229 = ' STATISTICS '
+         kw.230 = ' STOP '
+         kw.231 = ' STREAM '
+         kw.232 = ' STRUCTINDEX '
+         kw.233 = ' SUBTRACTMATRIX '
+         kw.234 = ' SUM '
+         kw.235 = ' SUMMARY '
+         kw.236 = ' SYSECHO '
+         kw.237 = ' SYSTASK '
+         kw.238 = ' S3 '
+         kw.239 = ' TABULATE '
+         kw.240 = ' TAPECOPY '
+         kw.241 = ' TAPELABEL '
+         kw.242 = ' TEMPLATE '
+         kw.243 = ' THEN '
+         kw.244 = ' TIMEPLOT '
+         kw.245 = ' TITLE '
+         kw.246 = ' TO '
+         kw.247 = ' TRANSPOSE '
+         kw.248 = ' TRANTAB '
+         kw.249 = ' TSO '
+         kw.250 = ' UNIVARIATE '
+         kw.251 = ' UNTIL '
+         kw.252 = ' UPDATE '
+         kw.253 = ' VAR '
+         kw.254 = ' WAITFOR '
+         kw.255 = ' WHERE '
+         kw.256 = ' WHILE '
+         kw.257 = ' WHILE '
+         kw.258 = ' WRITE_ARRAY '
+         kw.259 = ' X '
+         kw.260 = ' XSL '
+         kw.261 = ' ZEROMATRIX '
+         kw.262 = ' ADDR '
+         kw.263 = ' ADDRLONG '
+         kw.264 = ' AIRY '
+         kw.265 = ' ALLCOMB '
+         kw.266 = ' ALLPERM '
+         kw.267 = ' ANYALNUM '
+         kw.268 = ' ANYALPHA '
+         kw.269 = ' ANYCNTRL '
+         kw.270 = ' ANYDIGIT '
+         kw.271 = ' ANYFIRST '
+         kw.272 = ' ANYGRAPH '
+         kw.273 = ' ANYLOWER '
+         kw.274 = ' ANYNAME '
+         kw.275 = ' ANYPRINT '
+         kw.276 = ' ANYPUNCT '
+         kw.277 = ' ANYSPACE '
+         kw.278 = ' ANYUPPER '
+         kw.279 = ' ANYXDIGIT '
+         kw.280 = ' ARCOS '
+         kw.281 = ' ARCOSH '
+         kw.282 = ' ARSIN '
+         kw.283 = ' ARSINH '
+         kw.284 = ' ARTANH '
+         kw.285 = ' ATAN '
+         kw.286 = ' ATAN2 '
+         kw.287 = ' ATTRC '
+         kw.288 = ' ATTRN '
+         kw.289 = ' BAND '
+         kw.290 = ' BETA '
+         kw.291 = ' BETAINV '
+         kw.292 = ' BLACKCLPRC '
+         kw.293 = ' BLACKPTPRC '
+         kw.294 = ' BLKSHCLPRC '
+         kw.295 = ' BLKSHPTPRC '
+         kw.296 = ' BLSHIFT '
+         kw.297 = ' BNOT '
+         kw.298 = ' BOR '
+         kw.299 = ' BRSHIFT '
+         kw.300 = ' BXOR '
+         kw.301 = ' BYTE '
+         kw.302 = ' ALLCOMB '
+         kw.303 = ' ALLCOMBI '
+         kw.304 = ' ALLPERM '
+         kw.305 = ' CATS '
+         kw.306 = ' CATT '
+         kw.307 = ' CATX '
+         kw.308 = ' COMPCOST '
+         kw.309 = ' EXECUTE '
+         kw.310 = ' GRAYCODE '
+         kw.311 = ' IS8601_CONVERT '
+         kw.312 = ' LABEL '
+         kw.313 = ' LEXCOMB '
+         kw.314 = ' LEXCOMBI '
+         kw.315 = ' LEXPERK '
+         kw.316 = ' LEXPERM '
+         kw.317 = ' MISSING '
+         kw.318 = ' MODULE '
+         kw.319 = ' POKE '
+         kw.320 = ' POKELONG '
+         kw.321 = ' PRXCHANGE '
+         kw.322 = ' PRXDEBUG '
+         kw.323 = ' PRXFREE '
+         kw.324 = ' PRXNEXT '
+         kw.325 = ' PRXPOSN '
+         kw.326 = ' PRXSUBSTR '
+         kw.327 = ' RANBIN '
+         kw.328 = ' RANCAU '
+         kw.329 = ' RANEXP '
+         kw.330 = ' RANGAM '
+         kw.331 = ' RANNOR '
+         kw.332 = ' RANPERK '
+         kw.333 = ' RANPERM '
+         kw.334 = ' RANPOI '
+         kw.335 = ' RANTBL '
+         kw.336 = ' RANTRI '
+         kw.337 = ' RANUNI '
+         kw.338 = ' SCAN '
+         kw.339 = ' SET '
+         kw.340 = ' SLEEP '
+         kw.341 = ' SOFTMAX '
+         kw.342 = ' SORTC '
+         kw.343 = ' SORTN '
+         kw.344 = ' STREAMINIT '
+         kw.345 = ' SYMPUT '
+         kw.346 = ' SYMPUTX '
+         kw.347 = ' SYSTEM '
+         kw.348 = ' TANH '
+         kw.349 = ' VNAME '
+         kw.350 = ' VNEXT '
+         kw.351 = ' CAT '
+         kw.352 = ' CATQ '
+         kw.353 = ' CATS '
+         kw.354 = ' CATT '
+         kw.355 = ' CATX '
+         kw.356 = ' CDF '
+         kw.357 = ' CEIL '
+         kw.358 = ' CEILZ '
+         kw.359 = ' CEXIST '
+         kw.360 = ' CHAR '
+         kw.361 = ' CHOOSEC '
+         kw.362 = ' CHOOSEN '
+         kw.363 = ' CINV '
+         kw.364 = ' CLOSE '
+         kw.365 = ' CMISS '
+         kw.366 = ' CNONCT '
+         kw.367 = ' COALESCE '
+         kw.368 = ' COALESCEC '
+         kw.369 = ' COLLATE '
+         kw.370 = ' COMB '
+         kw.371 = ' COMPARE '
+         kw.372 = ' COMPBL '
+         kw.373 = ' COMPGED '
+         kw.374 = ' COMPLEV '
+         kw.375 = ' COMPOUND '
+         kw.376 = ' COMPRESS '
+         kw.377 = ' CONSTANT '
+         kw.378 = ' CONVX '
+         kw.379 = ' CONVXP '
+         kw.380 = ' COS '
+         kw.381 = ' COSH '
+         kw.382 = ' COUNT '
+         kw.383 = ' COUNTC '
+         kw.384 = ' COUNTW '
+         kw.385 = ' CSS '
+         kw.386 = ' CUROBS '
+         kw.387 = ' CV '
+         kw.388 = ' DACCDB '
+         kw.389 = ' DACCDBSL '
+         kw.390 = ' DACCSL '
+         kw.391 = ' DACCSYD '
+         kw.392 = ' DACCTAB '
+         kw.393 = ' DAIRY '
+         kw.394 = ' DATDIF '
+         kw.395 = ' DATE '
+         kw.396 = ' DATEJUL '
+         kw.397 = ' DATEPART '
+         kw.398 = ' DATETIME '
+         kw.399 = ' DAY '
+         kw.400 = ' DCLOSE '
+         kw.401 = ' DCREATE '
+         kw.402 = ' DEPDB '
+         kw.403 = ' DEPDBSL '
+         kw.404 = ' DEPSL '
+         kw.405 = ' DEPSYD '
+         kw.406 = ' DEPTAB '
+         kw.407 = ' DEQUOTE '
+         kw.408 = ' DEVIANCE '
+         kw.409 = ' DHMS '
+         kw.410 = ' DIF '
+         kw.411 = ' DIGAMMA '
+         kw.412 = ' DIM '
+         kw.413 = ' DINFO '
+         kw.414 = ' DIVIDE '
+         kw.415 = ' DNUM '
+         kw.416 = ' DOPEN '
+         kw.417 = ' DOPTNAME '
+         kw.418 = ' DOPTNUM '
+         kw.419 = ' DREAD '
+         kw.420 = ' DROPNOTE '
+         kw.421 = ' DSNAME '
+         kw.422 = ' DUR '
+         kw.423 = ' DURP '
+         kw.424 = ' ENVLEN '
+         kw.425 = ' ERF '
+         kw.426 = ' ERFC '
+         kw.427 = ' EUCLID '
+         kw.428 = ' EXIST '
+         kw.429 = ' EXP '
+         kw.430 = ' FACT '
+         kw.431 = ' FAPPEND '
+         kw.432 = ' FCLOSE '
+         kw.433 = ' FCOL '
+         kw.434 = ' FDELETE '
+         kw.435 = ' FETCH '
+         kw.436 = ' FETCHOBS '
+         kw.437 = ' FEXIST '
+         kw.438 = ' FGET '
+         kw.439 = ' FILEEXIST '
+         kw.440 = ' FILENAME '
+         kw.441 = ' FILEREF '
+         kw.442 = ' FINANCE '
+         kw.443 = ' FIND '
+         kw.444 = ' FINDC '
+         kw.445 = ' FINDW '
+         kw.446 = ' FINFO '
+         kw.447 = ' FINV '
+         kw.448 = ' FIPNAME '
+         kw.449 = ' FIPNAMEL '
+         kw.450 = ' FIPSTATE '
+         kw.451 = ' FIRST '
+         kw.452 = ' FLOOR '
+         kw.453 = ' FLOORZ '
+         kw.454 = ' FNONCT '
+         kw.455 = ' FNOTE '
+         kw.456 = ' FOPEN '
+         kw.457 = ' FOPTNAME '
+         kw.458 = ' FOPTNUM '
+         kw.459 = ' FPOINT '
+         kw.460 = ' FPOS '
+         kw.461 = ' FPUT '
+         kw.462 = ' FREAD '
+         kw.463 = ' FREWIND '
+         kw.464 = ' FRLEN '
+         kw.465 = ' FSEP '
+         kw.466 = ' FUZZ '
+         kw.467 = ' FWRITE '
+         kw.468 = ' GAMINV '
+         kw.469 = ' GAMMA '
+         kw.470 = ' GARKHCLPRC '
+         kw.471 = ' GARKHPTPRC '
+         kw.472 = ' GCD '
+         kw.473 = ' GEODIST '
+         kw.474 = ' GEOMEAN '
+         kw.475 = ' GEOMEANZ '
+         kw.476 = ' GETOPTION '
+         kw.477 = ' GETVARC '
+         kw.478 = ' GETVARN '
+         kw.479 = ' GRAYCODE '
+         kw.480 = ' HARMEAN '
+         kw.481 = ' HARMEANZ '
+         kw.482 = ' HBOUND '
+         kw.483 = ' HMS '
+         kw.484 = ' HOLIDAY '
+         kw.485 = ' HOUR '
+         kw.486 = ' HTMLDECODE '
+         kw.487 = ' HTMLENCODE '
+         kw.488 = ' IBESSEL '
+         kw.489 = ' IFC '
+         kw.490 = ' IFN '
+         kw.491 = ' INDEX '
+         kw.492 = ' INDEXC '
+         kw.493 = ' INDEXW '
+         kw.494 = ' INPUT '
+         kw.495 = ' INPUTC '
+         kw.496 = ' INPUTN '
+         kw.497 = ' INT '
+         kw.498 = ' INTCINDEX '
+         kw.499 = ' INTCK '
+         kw.500 = ' INTCYCLE '
+         kw.501 = ' INTFIT '
+         kw.502 = ' INTFMT '
+         kw.503 = ' INTGET '
+         kw.504 = ' INTINDEX '
+         kw.505 = ' INTNX '
+         kw.506 = ' INTRR '
+         kw.507 = ' INTSEAS '
+         kw.508 = ' INTSHIFT '
+         kw.509 = ' INTTEST '
+         kw.510 = ' INTZ '
+         kw.511 = ' IORCMSG '
+         kw.512 = ' IQR '
+         kw.513 = ' IRR '
+         kw.514 = ' JBESSEL '
+         kw.515 = ' JULDATE '
+         kw.516 = ' JULDATE7 '
+         kw.517 = ' KURTOSIS '
+         kw.518 = ' LAG '
+         kw.519 = ' LARGEST '
+         kw.520 = ' LBOUND '
+         kw.521 = ' LCM '
+         kw.522 = ' LCOMB '
+         kw.523 = ' LEFT '
+         kw.524 = ' LENGTH '
+         kw.525 = ' LENGTHC '
+         kw.526 = ' LENGTHM '
+         kw.527 = ' LENGTHN '
+         kw.528 = ' LEXCOMB '
+         kw.529 = ' LEXCOMBI '
+         kw.530 = ' LEXPERK '
+         kw.531 = ' LEXPERM '
+         kw.532 = ' LFACT '
+         kw.533 = ' LGAMMA '
+         kw.534 = ' LIBNAME '
+         kw.535 = ' LIBREF '
+         kw.536 = ' LOG '
+         kw.537 = ' LOG1PX '
+         kw.538 = ' LOG10 '
+         kw.539 = ' LOG2 '
+         kw.540 = ' LOGBETA '
+         kw.541 = ' LOGCDF '
+         kw.542 = ' LOGPDF '
+         kw.543 = ' LOGSDF '
+         kw.544 = ' LOWCASE '
+         kw.545 = ' LPERM '
+         kw.546 = ' LPNORM '
+         kw.547 = ' MAD '
+         kw.548 = ' MARGRCLPRC '
+         kw.549 = ' MARGRPTPRC '
+         kw.550 = ' MAX '
+         kw.551 = ' MD5 '
+         kw.552 = ' MDY '
+         kw.553 = ' MEAN '
+         kw.554 = ' MEDIAN '
+         kw.555 = ' MIN '
+         kw.556 = ' MINUTE '
+         kw.557 = ' MISSING '
+         kw.558 = ' MOD '
+         kw.559 = ' MODEXIST '
+         kw.560 = ' MODULEC '
+         kw.561 = ' MODULEN '
+         kw.562 = ' MODZ '
+         kw.563 = ' MONTH '
+         kw.564 = ' MOPEN '
+         kw.565 = ' MORT '
+         kw.566 = ' MSPLINT '
+         kw.567 = ' N '
+         kw.568 = ' NETPV '
+         kw.569 = ' NLITERAL '
+         kw.570 = ' NMISS '
+         kw.571 = ' NORMAL '
+         kw.572 = ' NOTALNUM '
+         kw.573 = ' NOTALPHA '
+         kw.574 = ' NOTCNTRL '
+         kw.575 = ' NOTDIGIT '
+         kw.576 = ' NOTE '
+         kw.577 = ' NOTFIRST '
+         kw.578 = ' NOTGRAPH '
+         kw.579 = ' NOTLOWER '
+         kw.580 = ' NOTNAME '
+         kw.581 = ' NOTPRINT '
+         kw.582 = ' NOTPUNCT '
+         kw.583 = ' NOTSPACE '
+         kw.584 = ' NOTUPPER '
+         kw.585 = ' NOTXDIGIT '
+         kw.586 = ' NPV '
+         kw.587 = ' NVALID '
+         kw.588 = ' NWKDOM '
+         kw.589 = ' OPEN '
+         kw.590 = ' ORDINAL '
+         kw.591 = ' PATHNAME '
+         kw.592 = ' PCTL '
+         kw.593 = ' PDF '
+         kw.594 = ' PEEK '
+         kw.595 = ' PEEKC '
+         kw.596 = ' PEEKCLONG '
+         kw.597 = ' PEEKLONG '
+         kw.598 = ' PERM '
+         kw.599 = ' POINT '
+         kw.600 = ' POISSON '
+         kw.601 = ' PROBBETA '
+         kw.602 = ' PROBBNML '
+         kw.603 = ' PROBBNRM '
+         kw.604 = ' PROBCHI '
+         kw.605 = ' PROBF '
+         kw.606 = ' PROBGAM '
+         kw.507 = ' PROBHYPR '
+         kw.608 = ' PROBMC '
+         kw.609 = ' PROBNEGB '
+         kw.610 = ' PROBNORM '
+         kw.611 = ' PROBT '
+         kw.612 = ' PROPCASE '
+         kw.613 = ' PRXCHANGE '
+         kw.614 = ' PRXMATCH '
+         kw.615 = ' PRXPAREN '
+         kw.616 = ' PRXPARSE '
+         kw.617 = ' PRXPOSN '
+         kw.618 = ' PTRLONGADD '
+         kw.619 = ' PUT '
+         kw.620 = ' PUTC '
+         kw.621 = ' PUTN '
+         kw.622 = ' PVP '
+         kw.623 = ' QTR '
+         kw.624 = ' QUANTILE '
+         kw.625 = ' QUOTE '
+         kw.626 = ' RANBIN '
+         kw.627 = ' RANCAU '
+         kw.628 = ' RAND '
+         kw.629 = ' RANEXP '
+         kw.630 = ' RANGAM '
+         kw.631 = ' RANGE '
+         kw.632 = ' RANK '
+         kw.633 = ' RANNOR '
+         kw.634 = ' RANPOI '
+         kw.635 = ' RANTBL '
+         kw.636 = ' RANTRI '
+         kw.637 = ' RANUNI '
+         kw.638 = ' RENAME '
+         kw.639 = ' REPEAT '
+         kw.640 = ' RESOLVE '
+         kw.641 = ' REVERSE '
+         kw.642 = ' REWIND '
+         kw.643 = ' RIGHT '
+         kw.644 = ' RMS '
+         kw.645 = ' ROUND '
+         kw.646 = ' ROUNDE '
+         kw.647 = ' ROUNDZ '
+         kw.648 = ' SAVING '
+         kw.649 = ' SCAN '
+         kw.650 = ' SDF '
+         kw.651 = ' SECOND '
+         kw.652 = ' SIGN '
+         kw.653 = ' SIN '
+         kw.654 = ' SINH '
+         kw.655 = ' SKEWNESS '
+         kw.656 = ' SLEEP '
+         kw.657 = ' SMALLEST '
+         kw.658 = ' SOUNDEX '
+         kw.659 = ' SPEDIS '
+         kw.660 = ' SQRT '
+         kw.661 = ' STD '
+         kw.662 = ' STDERR '
+         kw.663 = ' STFIPS '
+         kw.664 = ' STNAME '
+         kw.665 = ' STNAMEL '
+         kw.666 = ' STRIP '
+         kw.667 = ' SUBPAD '
+         kw.668 = ' SUBSTR '
+         kw.669 = ' SUBSTRN '
+         kw.670 = ' SUM '
+         kw.671 = ' SUMABS '
+         kw.672 = ' SYMEXIST '
+         kw.673 = ' SYMGET '
+         kw.674 = ' SYMGLOBL '
+         kw.675 = ' SYMLOCAL '
+         kw.676 = ' SYSGET '
+         kw.677 = ' SYSMSG '
+         kw.678 = ' SYSPARM '
+         kw.679 = ' SYSPROCESSID '
+         kw.680 = ' SYSPROCESSNAME '
+         kw.681 = ' SYSPROD '
+         kw.682 = ' SYSRC '
+         kw.683 = ' SYSTEM '
+         kw.684 = ' TAN '
+         kw.685 = ' TANH '
+         kw.686 = ' TIME '
+         kw.687 = ' TIMEPART '
+         kw.688 = ' TINV '
+         kw.689 = ' TNONCT '
+         kw.690 = ' TODAY '
+         kw.691 = ' TRANSLATE '
+         kw.692 = ' TRANSTRN '
+         kw.693 = ' TRANWRD '
+         kw.694 = ' TRIGAMMA '
+         kw.695 = ' TRIM '
+         kw.696 = ' TRIMN '
+         kw.697 = ' TRUNC '
+         kw.698 = ' UNIFORM '
+         kw.699 = ' UPCASE '
+         kw.700 = ' URLDECODE '
+         kw.701 = ' URLENCODE '
+         kw.702 = ' USS '
+         kw.703 = ' UUIDGEN '
+         kw.704 = ' VAR '
+         kw.705 = ' VARFMT '
+         kw.706 = ' VARINFMT '
+         kw.707 = ' VARLABEL '
+         kw.708 = ' VARLEN '
+         kw.709 = ' VARNAME '
+         kw.710 = ' VARNUM '
+         kw.711 = ' VARRAY '
+         kw.712 = ' VARRAYX '
+         kw.713 = ' VARTYPE '
+         kw.714 = ' VERIFY '
+         kw.715 = ' VFORMAT '
+         kw.716 = ' VFORMATD '
+         kw.717 = ' VFORMATDX '
+         kw.718 = ' VFORMATN '
+         kw.719 = ' VFORMATNX '
+         kw.720 = ' VFORMATW '
+         kw.721 = ' VFORMATWX '
+         kw.722 = ' VFORMATX '
+         kw.723 = ' VINARRAY '
+         kw.724 = ' VINARRAYX '
+         kw.725 = ' VINFORMAT '
+         kw.726 = ' VINFORMATD '
+         kw.727 = ' VINFORMATDX '
+         kw.728 = ' VINFORMATN '
+         kw.729 = ' VINFORMATNX '
+         kw.730 = ' VINFORMATW '
+         kw.731 = ' VINFORMATWX '
+         kw.732 = ' VINFORMATX '
+         kw.733 = ' VLABEL '
+         kw.734 = ' VLABELX '
+         kw.735 = ' VLENGTH '
+         kw.736 = ' VLENGTHX '
+         kw.737 = ' VNAME '
+         kw.738 = ' VNAMEX '
+         kw.739 = ' VTYPE '
+         kw.740 = ' VTYPEX '
+         kw.741 = ' VVALUE '
+         kw.742 = ' VVALUEX '
+         kw.743 = ' WEEK '
+         kw.744 = ' WEEKDAY '
+         kw.745 = ' WHICHC '
+         kw.746 = ' WHICHN '
+         kw.747 = ' YEAR '
+         kw.748 = ' YIELDP '
+         kw.749 = ' YRDIF '
+         kw.750 = ' YYQ '
+         kw.751 = ' ZIPCITY '
+         kw.752 = ' ZIPCITYDISTANCE '
+         kw.753 = ' ZIPFIPS '
+         kw.754 = ' ZIPNAME '
+         kw.755 = ' ZIPNAMEL '
+         kw.756 = ' ZIPSTATE '
+         kw.757 = ' ACECLUS '
+         kw.758 = ' ADAPTIVEREG '
+         kw.759 = ' ANOVA '
+         kw.760 = ' BCHOICE '
+         kw.761 = ' BOXPLOT '
+         kw.762 = ' CALIS '
+         kw.763 = ' CANCORR '
+         kw.764 = ' CANDISC '
+         kw.765 = ' CATMOD '
+         kw.766 = ' CLUSTER '
+         kw.767 = ' CORR '
+         kw.768 = ' CORRESP '
+         kw.769 = ' DISCRIM '
+         kw.770 = ' DISTANCE '
+         kw.771 = ' FACTOR '
+         kw.772 = ' FASTCLUS '
+         kw.773 = ' FMM '
+         kw.774 = ' FREQ '
+         kw.775 = ' GAM '
+         kw.776 = ' GAMPL '
+         kw.777 = ' GEE '
+         kw.778 = ' GENMOD '
+         kw.779 = ' GLIMMIX '
+         kw.780 = ' GLM '
+         kw.781 = ' GLMMOD '
+         kw.782 = ' GLMPOWER '
+         kw.783 = ' GLMSELECT '
+         kw.784 = ' HPGENSELECT '
+         kw.785 = ' HPLOGISTIC '
+         kw.786 = ' HPMIXED '
+         kw.787 = ' HPREG '
+         kw.788 = ' ICLIFETEST '
+         kw.789 = ' ICPHREG '
+         kw.790 = ' INBREED '
+         kw.791 = ' IRT '
+         kw.792 = ' KDE '
+         kw.793 = ' KRIGE2D '
+         kw.794 = ' LATTICE '
+         kw.795 = ' LIFEREG '
+         kw.796 = ' LIFETEST '
+         kw.797 = ' LOESS '
+         kw.798 = ' LOGISTIC '
+         kw.799 = ' MCMC '
+         kw.800 = ' MDS '
+         kw.801 = ' MI '
+         kw.802 = ' MIANALYZE '
+         kw.803 = ' MIXED '
+         kw.804 = ' MODECLUS '
+         kw.805 = ' MULTTEST '
+         kw.806 = ' NESTED '
+         kw.807 = ' NLIN '
+         kw.808 = ' NLMIXED '
+         kw.809 = ' NPAR1WAY '
+         kw.810 = ' ORTHOREG '
+         kw.811 = ' PHREG '
+         kw.812 = ' PLAN '
+         kw.813 = ' PLM '
+         kw.814 = ' PLS '
+         kw.815 = ' POWER '
+         kw.816 = ' PRINCOMP '
+         kw.817 = ' PRINQUAL '
+         kw.818 = ' PROBIT '
+         kw.819 = ' QUANTLIFE '
+         kw.820 = ' QUANTREG '
+         kw.821 = ' QUANTSELECT '
+         kw.822 = ' REG '
+         kw.823 = ' ROBUSTREG '
+         kw.824 = ' RSREG '
+         kw.825 = ' SCORE '
+         kw.826 = ' SEQDESIGN '
+         kw.827 = ' SEQTEST '
+         kw.828 = ' SIM2D '
+         kw.829 = ' SIMNORMAL '
+         kw.830 = ' SPP '
+         kw.831 = ' STDIZE '
+         kw.832 = ' STDRATE '
+         kw.833 = ' STEPDISC '
+         kw.834 = ' SURVEYFREQ '
+         kw.835 = ' SURVEYIMPUTE '
+         kw.836 = ' SURVEYLOGISTIC '
+         kw.837 = ' SURVEYMEANS '
+         kw.838 = ' SURVEYPHREG '
+         kw.839 = ' SURVEYREG '
+         kw.840 = ' SURVEYSELECT '
+         kw.841 = ' TPSPLINE '
+         kw.842 = ' TRANSREG '
+         kw.843 = ' TREE '
+         kw.844 = ' TTEST '
+         kw.845 = ' VARCLUS '
+         kw.846 = ' VARCOMP '
+         kw.847 = ' VARIOGRAM '
+         kw.848 = ' %ABORT '
+         kw.849 = ' %BQUOTE '
+         kw.850 = ' %COPY '
+         kw.851 = ' %DISPLAY '
+         kw.852 = ' %DO '
+         kw.853 = ' %ELSE '
+         kw.854 = ' %END '
+         kw.855 = ' %EVAL '
+         kw.856 = ' %GOTO '
+         kw.857 = ' %IF '
+         kw.858 = ' %INDEX '
+         kw.859 = ' %INPUT '
+         kw.860 = ' %LENGTH '
+         kw.861 = ' %LET '
+         kw.862 = ' %LOCAL '
+         kw.863 = ' %MACRO '
+         kw.864 = ' %MEND '
+         kw.865 = ' %NRBQUOTE '
+         kw.866 = ' %NRQUOTE '
+         kw.867 = ' %NRSTR '
+         kw.868 = ' %PUT '
+         kw.869 = ' %QSCAN '
+         kw.870 = ' %QSUBSTR '
+         kw.871 = ' %QSYSFUNC '
+         kw.872 = ' %QUOTE '
+         kw.873 = ' %QUPCASE '
+         kw.874 = ' %RETURN '
+         kw.875 = ' %SCAN '
+         kw.876 = ' %STR '
+         kw.877 = ' %SUBSTR '
+         kw.878 = ' %SUPERQ '
+         kw.879 = ' %SYMDEL '
+         kw.880 = ' %SYMEXIST '
+         kw.881 = ' %SYMLOCAL '
+         kw.882 = ' %SYSCALL '
+         kw.883 = ' %SYSEVALF '
+         kw.884 = ' %SYSEXEC '
+         kw.885 = ' %SYSFUNC '
+         kw.886 = ' %SYSGET '
+         kw.887 = ' %SYSLPUT '
+         kw.888 = ' %SYSMACEXEC '
+         kw.889 = ' %SYSMACEXIST '
+         kw.890 = ' %SYSMEXECDEPTH '
+         kw.891 = ' %SYSMEXECNAME '
+         kw.892 = ' %SYSPROD '
+         kw.893 = ' %SYSRPUT '
+         kw.894 = ' %THEN '
+         kw.895 = ' %UNQUOTE '
+         kw.896 = ' %UNTIL '
+         kw.897 = ' %UPCASE '
+         kw.898 = ' %WHILE '
+         kw.899 = ' %WINDOW '
+         kw.900 = ' MACRO '
+         kw.901 = ' RESETLINE '
+      end
+   when (usrhilng = 'SHELL') then
+      do
+         kw.0   = 33
+         kw.1   = ' BREAK '
+         kw.2   = ' CASE '
+         kw.3   = ' CONTINUE '
+         kw.4   = ' DO '
+         kw.5   = ' DONE '
+         kw.6   = ' ECHO '
+         kw.7   = ' ELIF '
+         kw.8   = ' ELSE '
+         kw.9   = ' ESAC '
+         kw.10  = ' EVAL '
+         kw.11  = ' EXEC '
+         kw.12  = ' EXIT '
+         kw.13  = ' EXPORT '
+         kw.14  = ' FI '
+         kw.15  = ' FOR '
+         kw.16  = ' FUNCTION '
+         kw.17  = ' IF '
+         kw.18  = ' IN '
+         kw.19  = ' READ '
+         kw.20  = ' READONLY '
+         kw.21  = ' RETURN '
+         kw.22  = ' SELECT '
+         kw.23  = ' SET '
+         kw.24  = ' SHIFT '
+         kw.25  = ' THEN '
+         kw.26  = ' TIME '
+         kw.27  = ' TRAP '
+         kw.28  = ' UILIMIT '
+         kw.29  = ' UMASK '
+         kw.30  = ' UNTIL '
+         kw.31  = ' UNSET '
+         kw.32  = ' WAIT '
+         kw.33  = ' WHILE '
+      end
+   when (usrhilng = 'SQL') then
+      do
+         kw.0    = 295
+         kw.1    = ' ADD '
+         kw.2    = ' AFTER '
+         kw.3    = ' ALL '
+         kw.4    = ' ALLOCATE '
+         kw.5    = ' ALLOW '
+         kw.6    = ' ALTERAND '
+         kw.7    = ' ANY '
+         kw.8    = ' AS '
+         kw.9    = ' ARRAY1 '
+         kw.10   = ' ARRAY_EXISTS1 '
+         kw.11   = ' ASENSITIVE '
+         kw.12   = ' ASSOCIATE '
+         kw.13   = ' ASUTIME '
+         kw.14   = ' AT '
+         kw.15   = ' AUDIT '
+         kw.16   = ' AUX '
+         kw.17   = ' AUXILIARY '
+         kw.18   = ' BEFORE '
+         kw.19   = ' BEGIN '
+         kw.20   = ' BETWEEN '
+         kw.21   = ' BUFFERPOOL '
+         kw.22   = ' BY '
+         kw.23   = ' CALL '
+         kw.24   = ' CAPTURE '
+         kw.25   = ' CASCADED '
+         kw.26   = ' CASER '
+         kw.27   = ' CAST '
+         kw.28   = ' CCSIDATE '
+         kw.29   = ' CHARW '
+         kw.30   = ' CHARACTER '
+         kw.31   = ' CHECK '
+         kw.32   = ' CLONE '
+         kw.33   = ' CLOSEY1 '
+         kw.34   = ' CLUSTEREXISTS1 '
+         kw.35   = ' COLLECTION '
+         kw.36   = ' COLLIDATE '
+         kw.37   = ' COLUMNE '
+         kw.38   = ' COMMENT '
+         kw.39   = ' COMMIT '
+         kw.40   = ' CONCAT '
+         kw.41   = ' CONDITION '
+         kw.42   = ' CONNECT '
+         kw.43   = ' CONNECTION '
+         kw.44   = ' CONSTRAINT '
+         kw.45   = ' CONTAINS '
+         kw.46   = ' CONTENTOOL '
+         kw.47   = ' CONTINUE '
+         kw.48   = ' CREATE '
+         kw.49   = ' CUBE '
+         kw.50   = ' CURRENT '
+         kw.51   = ' CURRENT_DATE '
+         kw.52   = ' CURRENT_LC_CTYPE '
+         kw.53   = ' CURRENT_PATH '
+         kw.54   = ' CURRENT_SCHEMA '
+         kw.55   = ' CURRENT_TIME '
+         kw.56   = ' CURRENT_TIMESTAMP '
+         kw.57   = ' CURRVAL '
+         kw.58   = ' CURSOR '
+         kw.59   = ' DATA '
+         kw.60   = ' DATABASE '
+         kw.61   = ' DAY '
+         kw.62   = ' DAYS '
+         kw.63   = ' DBINFO '
+         kw.64   = ' DECLARE '
+         kw.65   = ' DEFAULT '
+         kw.66   = ' DELETE '
+         kw.67   = ' DESCRIPTOR '
+         kw.68   = ' DETERMINISTIC '
+         kw.69   = ' DISABLE '
+         kw.70   = ' DISALLOW '
+         kw.71   = ' DISTINCT '
+         kw.72   = ' DO '
+         kw.73   = ' DOCUMENT '
+         kw.74   = ' DOUBLE '
+         kw.75   = ' DROP '
+         kw.76   = ' DSSIZE '
+         kw.77   = ' DYNAMIC '
+         kw.78   = ' EDITPROC '
+         kw.79   = ' ELSE '
+         kw.80   = ' ELSEIF '
+         kw.81   = ' ENCODING '
+         kw.82   = ' ENCRYPTION '
+         kw.83   = ' END '
+         kw.84   = ' ENDING '
+         kw.85   = ' END-EXEC2 '
+         kw.86   = ' ERASE '
+         kw.87   = ' ESCAPE '
+         kw.88   = ' EXCEPT '
+         kw.89   = ' EXCEPTION '
+         kw.90   = ' EXECUTE '
+         kw.91   = ' EXISTS '
+         kw.92   = ' EXIT '
+         kw.93   = ' EXPLAIN '
+         kw.94   = ' EXTERNAL '
+         kw.95   = ' FENCED '
+         kw.96   = ' FETCH '
+         kw.97   = ' FIELDPROC '
+         kw.98   = ' FINAL '
+         kw.99   = ' FIRST '
+         kw.100  = ' FOR '
+         kw.101  = ' FREE '
+         kw.102  = ' FROM '
+         kw.103  = ' FULL '
+         kw.104  = ' FUNCTION '
+         kw.105  = ' GENERATED '
+         kw.106  = ' GET '
+         kw.107  = ' GLOBAL '
+         kw.108  = ' GO '
+         kw.109  = ' GOTO '
+         kw.110  = ' GRANT '
+         kw.111  = ' GROUP '
+         kw.112  = ' HANDLER '
+         kw.113  = ' HAVING '
+         kw.114  = ' HOLD '
+         kw.115  = ' HOUR '
+         kw.116  = ' HOURS '
+         kw.117  = ' IF '
+         kw.118  = ' IMMEDIATE '
+         kw.119  = ' IN '
+         kw.120  = ' INCLUSIVE '
+         kw.121  = ' INDEX '
+         kw.122  = ' INHERIT '
+         kw.123  = ' INNER '
+         kw.124  = ' INOUT '
+         kw.125  = ' INSENSITIVE '
+         kw.126  = ' INSERT '
+         kw.127  = ' INTERSECT '
+         kw.128  = ' INTO '
+         kw.129  = ' IS '
+         kw.130  = ' ISOBID '
+         kw.131  = ' ITERATE '
+         kw.132  = ' JAR '
+         kw.133  = ' JOIN '
+         kw.134  = ' KEEP '
+         kw.135  = ' KEY '
+         kw.136  = ' LABEL '
+         kw.137  = ' LANGUAGE '
+         kw.138  = ' LAST '
+         kw.139  = ' LC_CTYPE '
+         kw.140  = ' LEAVE '
+         kw.141  = ' LEFT '
+         kw.142  = ' LIKE '
+         kw.143  = ' LOCAL '
+         kw.144  = ' LOCALE '
+         kw.145  = ' LOCATOR '
+         kw.146  = ' LOCATORS '
+         kw.147  = ' LOCK '
+         kw.148  = ' LOCKMAX '
+         kw.149  = ' LOCKSIZE '
+         kw.150  = ' LONG '
+         kw.151  = ' LOOP '
+         kw.152  = ' MAINTAINED '
+         kw.153  = ' MATERIALIZED '
+         kw.154  = ' MICROSECOND '
+         kw.155  = ' MICROSECONDS '
+         kw.156  = ' MINUTEMINUTES '
+         kw.157  = ' MODIFIES '
+         kw.158  = ' MONTH '
+         kw.159  = ' MONTHS '
+         kw.160  = ' NEXT '
+         kw.161  = ' NEXTVAL '
+         kw.162  = ' NO '
+         kw.163  = ' NONE '
+         kw.164  = ' NOT '
+         kw.165  = ' NULL '
+         kw.166  = ' NULLS '
+         kw.167  = ' NUMPARTS '
+         kw.168  = ' OBID '
+         kw.169  = ' OF '
+         kw.170  = ' OLD '
+         kw.171  = ' ON '
+         kw.172  = ' OPEN '
+         kw.173  = ' OPTIMIZATION '
+         kw.174  = ' OPTIMIZE '
+         kw.175  = ' OR '
+         kw.176  = ' ORDER '
+         kw.177  = ' ORGANIZATION '
+         kw.178  = ' OUT '
+         kw.179  = ' OUTER '
+         kw.180  = ' PACKAGE '
+         kw.181  = ' PARAMETER '
+         kw.182  = ' PART '
+         kw.183  = ' PADDED '
+         kw.184  = ' PARTITION '
+         kw.185  = ' PARTITIONED '
+         kw.186  = ' PARTITIONING '
+         kw.187  = ' PATH '
+         kw.188  = ' PIECESIZE '
+         kw.189  = ' PERIOD '
+         kw.190  = ' PLAN '
+         kw.191  = ' PRECISION '
+         kw.192  = ' PREPARE '
+         kw.193  = ' PREVVAL '
+         kw.194  = ' PRIOR '
+         kw.195  = ' PRIQTY '
+         kw.196  = ' PRIVILEGES '
+         kw.197  = ' PROCEDURE '
+         kw.198  = ' PROGRAM '
+         kw.199  = ' PSID '
+         kw.200  = ' PUBLIC '
+         kw.201  = ' QUERY '
+         kw.202  = ' QUERYNO '
+         kw.203  = ' READS '
+         kw.204  = ' REFERENCES '
+         kw.205  = ' REFRESH '
+         kw.206  = ' RESIGNAL '
+         kw.207  = ' RELEASE '
+         kw.208  = ' RENAME '
+         kw.209  = ' REPEAT '
+         kw.210  = ' RESTRICT '
+         kw.211  = ' RESULT '
+         kw.212  = ' RESULT_SET_LOCATOR '
+         kw.213  = ' RETURN '
+         kw.214  = ' RETURNS '
+         kw.215  = ' REVOKE '
+         kw.216  = ' RIGHT '
+         kw.217  = ' ROLE '
+         kw.218  = ' ROLLBACK '
+         kw.219  = ' ROLLUP1 '
+         kw.220  = ' ROUND_CEILING '
+         kw.221  = ' ROUND_DOWN '
+         kw.222  = ' ROUND_FLOOR '
+         kw.223  = ' ROUND_HALF_DOWN '
+         kw.224  = ' ROUND_HALF_EVEN '
+         kw.225  = ' ROUND_HALF_UP '
+         kw.226  = ' ROUND_UP '
+         kw.227  = ' ROW '
+         kw.228  = ' ROWSET '
+         kw.229  = ' RUN '
+         kw.230  = ' SAVEPOINT '
+         kw.231  = ' SCHEMA '
+         kw.232  = ' SCRATCHPAD '
+         kw.233  = ' SECOND '
+         kw.234  = ' SECONDS '
+         kw.235  = ' SECQTY '
+         kw.236  = ' SECURITY '
+         kw.237  = ' SEQUENCE '
+         kw.238  = ' SELECT '
+         kw.239  = ' SENSITIVE '
+         kw.240  = ' SESSION_USER '
+         kw.241  = ' SET '
+         kw.242  = ' SIGNAL '
+         kw.243  = ' SIMPLE '
+         kw.244  = ' SOME '
+         kw.245  = ' SOURCE '
+         kw.246  = ' SPECIFIC '
+         kw.247  = ' STANDARD '
+         kw.248  = ' STATIC '
+         kw.249  = ' STATEMENT '
+         kw.250  = ' STAY '
+         kw.251  = ' STOGROUP '
+         kw.252  = ' STORES '
+         kw.253  = ' STYLE '
+         kw.254  = ' SUMMARY '
+         kw.255  = ' SYNONYM '
+         kw.256  = ' SYSDATE '
+         kw.257  = ' SYSTEM '
+         kw.258  = ' SYSTIMESTAMP '
+         kw.259  = ' TABLE '
+         kw.260  = ' TABLESPACE '
+         kw.261  = ' THEN '
+         kw.262  = ' TO '
+         kw.263  = ' TRANSFER OWNERSHIP '
+         kw.264  = ' TRIGGER '
+         kw.265  = ' TRUNCATE '
+         kw.266  = ' TYPE '
+         kw.267  = ' UNDO '
+         kw.268  = ' UNION '
+         kw.269  = ' UNIQUE '
+         kw.270  = ' UNTIL '
+         kw.271  = ' UPDATE '
+         kw.272  = ' USER '
+         kw.273  = ' USING '
+         kw.274  = ' VALIDPROC '
+         kw.275  = ' VALUE '
+         kw.276  = ' VALUES '
+         kw.277  = ' VARIABLE '
+         kw.278  = ' VARIANT '
+         kw.279  = ' VCAT '
+         kw.280  = ' VERSIONING1 '
+         kw.281  = ' VIEW '
+         kw.282  = ' VOLATILE '
+         kw.283  = ' VOLUMES '
+         kw.284  = ' WHEN '
+         kw.285  = ' WHENEVER '
+         kw.286  = ' WHERE '
+         kw.287  = ' WHILE '
+         kw.288  = ' WITH '
+         kw.289  = ' WLM '
+         kw.290  = ' XMLEXISTS '
+         kw.291  = ' XMLNAMESPACES '
+         kw.292  = ' XMLCAST '
+         kw.293  = ' YEAR '
+         kw.294  = ' YEARS '
+         kw.295  = ' ZONE '
+      end
+   when (usrhilng = 'TYPESCRIPT') then
+      do
+         kw.0   = 60
+         kw.1   = ' ANY '
+         kw.2   = ' AS '
+         kw.3   = ' BOOLEAN '
+         kw.4   = ' BREAK '
+         kw.5   = ' CASE '
+         kw.6   = ' CATCH '
+         kw.7   = ' CLASS '
+         kw.8   = ' CONST '
+         kw.9   = ' CONSTRUCTOR '
+         kw.10  = ' CONTINUE '
+         kw.11  = ' DEBUGGER '
+         kw.12  = ' DECLARE '
+         kw.13  = ' DEFAULT '
+         kw.14  = ' DELETE '
+         kw.15  = ' DO '
+         kw.16  = ' ELSE '
+         kw.17  = ' ENUM '
+         kw.18  = ' EXPORT '
+         kw.19  = ' EXTENDS '
+         kw.20  = ' FALSE '
+         kw.21  = ' FINALLY '
+         kw.22  = ' FOR '
+         kw.23  = ' FROM '
+         kw.24  = ' FUNCTION '
+         kw.25  = ' GET '
+         kw.26  = ' IF '
+         kw.27  = ' IMPLEMENTS '
+         kw.28  = ' IMPORT '
+         kw.29  = ' IN '
+         kw.30  = ' INSTANCEOF '
+         kw.31  = ' INTERFACE '
+         kw.32  = ' LET '
+         kw.33  = ' MODULE '
+         kw.34  = ' NEW '
+         kw.35  = ' NULL '
+         kw.36  = ' NUMBER '
+         kw.37  = ' OF '
+         kw.38  = ' PACKAGE '
+         kw.39  = ' PRIVATE '
+         kw.40  = ' PROTECTED '
+         kw.41  = ' PUBLIC '
+         kw.42  = ' REQUIRE '
+         kw.43  = ' RETURN '
+         kw.44  = ' SET '
+         kw.45  = ' STATIC '
+         kw.46  = ' STRING '
+         kw.47  = ' SUPER '
+         kw.48  = ' SWITCH '
+         kw.49  = ' SYMBOL '
+         kw.50  = ' THIS '
+         kw.51  = ' THROW '
+         kw.52  = ' TRUE '
+         kw.53  = ' TRY '
+         kw.54  = ' TYPE '
+         kw.55  = ' TYPEOF '
+         kw.56  = ' VAR '
+         kw.57  = ' VOID '
+         kw.58  = ' WHILE '
+         kw.59  = ' WITH '
+         kw.60  = ' YIELD '
+      end
+   when (usrhilng = 'XMLASCII') then
+      do
+         kw.0   = 241
+         kw.1   = '<address>'
+         kw.2   = '</address>'
+         kw.3   = '<article>'
+         kw.4   = '</article>'
+         kw.5   = '<aside>'
+         kw.6   = '</aside>'
+         kw.7   = '<b>'
+         kw.8   = '</b>'
+         kw.9   = '<bdi>'
+         kw.10  = '</bdi>'
+         kw.11  = '<bdo>'
+         kw.12  = '</bdo>'
+         kw.13  = '<body>'
+         kw.14  = '</body>'
+         kw.15  = '<br>'
+         kw.16  = '</br>'
+         kw.17  = '<caption>'
+         kw.18  = '</caption>'
+         kw.19  = '<cite>'
+         kw.20  = '</cite>'
+         kw.21  = '<code>'
+         kw.22  = '</code>'
+         kw.23  = '<colgroup>'
+         kw.24  = '</colgroup>'
+         kw.25  = '<dd>'
+         kw.26  = '</dd>'
+         kw.27  = '<del>'
+         kw.28  = '</del>'
+         kw.29  = '<details>'
+         kw.30  = '</details>'
+         kw.31  = '<dfn>'
+         kw.32  = '</dfn>'
+         kw.33  = '<dl>'
+         kw.34  = '</dl>'
+         kw.35  = '<dt>'
+         kw.36  = '</dt>'
+         kw.37  = '<em>'
+         kw.38  = '</em>'
+         kw.39  = '<fieldset>'
+         kw.40  = '</fieldset>'
+         kw.41  = '<figcaption>'
+         kw.42  = '</figcaption>'
+         kw.43  = '<figure>'
+         kw.44  = '</figure>'
+         kw.45  = '<footer>'
+         kw.46  = '</footer>'
+         kw.47  = '<h1>'
+         kw.48  = '</h1>'
+         kw.49  = '<h2>'
+         kw.50  = '</h2>'
+         kw.51  = '<h3>'
+         kw.52  = '</h3>'
+         kw.53  = '<h4>'
+         kw.54  = '</h4>'
+         kw.55  = '<h5>'
+         kw.56  = '</h5>'
+         kw.57  = '<h6>'
+         kw.58  = '</h6>'
+         kw.59  = '<head>'
+         kw.60  = '</head>'
+         kw.61  = '<header>'
+         kw.62  = '</header>'
+         kw.63  = '<hr>'
+         kw.64  = '</hr>'
+         kw.65  = '<i>'
+         kw.66  = '</i>'
+         kw.67  = '<ins>'
+         kw.68  = '</ins>'
+         kw.69  = '<kbd>'
+         kw.70  = '</kbd>'
+         kw.71  = '<legend>'
+         kw.72  = '</legend>'
+         kw.73  = '<li>'
+         kw.74  = '</li>'
+         kw.75  = '<main>'
+         kw.76  = '</main>'
+         kw.77  = '<mark>'
+         kw.78  = '</mark>'
+         kw.79  = '<nav>'
+         kw.80  = '</nav>'
+         kw.81  = '<noscript>'
+         kw.82  = '</noscript>'
+         kw.83  = '<ol>'
+         kw.84  = '</ol>'
+         kw.85  = '<p>'
+         kw.86  = '</p>'
+         kw.87  = '<picture>'
+         kw.88  = '</picture>'
+         kw.89  = '<pre>'
+         kw.90  = '</pre>'
+         kw.91  = '<q>'
+         kw.92  = '</q>'
+         kw.93  = '<rp>'
+         kw.94  = '</rp>'
+         kw.95  = '<rt>'
+         kw.96  = '</rt>'
+         kw.97  = '<ruby>'
+         kw.98  = '</ruby>'
+         kw.99  = '<s>'
+         kw.100 = '</s>'
+         kw.101 = '<samp>'
+         kw.102 = '</samp>'
+         kw.103 = '<script>'
+         kw.104 = '</script>'
+         kw.105 = '<section>'
+         kw.106 = '</section>'
+         kw.107 = '<small>'
+         kw.108 = '</small>'
+         kw.109 = '<strong>'
+         kw.110 = '</strong>'
+         kw.111 = '<style>'
+         kw.112 = '</style>'
+         kw.113 = '<sub>'
+         kw.114 = '</sub>'
+         kw.115 = '<summary>'
+         kw.116 = '</summary>'
+         kw.117 = '<sup>'
+         kw.118 = '</sup>'
+         kw.119 = '<table>'
+         kw.120 = '</table>'
+         kw.121 = '<tbody>'
+         kw.122 = '</tbody>'
+         kw.123 = '<td>'
+         kw.124 = '</td>'
+         kw.125 = '<template>'
+         kw.126 = '</template>'
+         kw.127 = '<tfoot>'
+         kw.128 = '</tfoot>'
+         kw.129 = '<th>'
+         kw.130 = '</th>'
+         kw.131 = '<thead>'
+         kw.132 = '</thead>'
+         kw.133 = '<title>'
+         kw.134 = '</title>'
+         kw.135 = '<tr>'
+         kw.136 = '</tr>'
+         kw.137 = '<u>'
+         kw.138 = '</u>'
+         kw.139 = '<ul>'
+         kw.140 = '</ul>'
+         kw.141 = '<var>'
+         kw.142 = '</var>'
+         kw.143 = '<wbr>'
+         kw.144 = '</wbr>'
+      end
+/*********************************************************************/
+/* USREDDEX traps invalid languages, so this otherwise should never  */
+/* execute.                                                          */
+/*********************************************************************/
+   otherwise
+      nop
+end
+if usrhilng <> '' & usrhilng <> 'OFF' then
+   do
+/*********************************************************************/
+/* Set the atr. and clr. stems to the defaults.  To customize either */
+/* atr. or clr., set them in the select code above, since this code  */
+/* will only set the atr. and clr. stem if it is null.  We subtract  */
+/* two from the length of the string to account for the leading and  */
+/* trailing blank on the blank-delimited keyword.                    */
+/*                                                                   */
+/* Thanks to Robert Prins for the idea to initialize the atr. and    */
+/* clr. stems by looping.  Adding languages is much easier now.      */
+/*********************************************************************/
+      do i = 1 to kw.0
+         if usrhilng <> 'XMLASCII' then
+            #chars = length(kw.i) - 2
+         else /* XMLASCII is not blank-delimited, so -2 not needed */
+            #chars = length(kw.i)
+         if atr.i = '' then
+            do
+               if usrhilng = 'ACS' & substr(kw.i,2,1) = '&' then
+                  atr.i = ' 'copies('D',#chars-1)
+               else
+                  atr.i = copies('D',#chars)
+            end
+         if clr.i = '' then
+            clr.i = copies('R',#chars)
+      end
+/*********************************************************************/
+/* Highlight character operators for PANELX highlighting (e.g. GT    */
+/* for Greater Than, etc.).                                          */
+/*********************************************************************/
+      if usrhilng = 'PANELX' then
+         do
+            #lines = length(zdata) / zwidth
+            call panelxhighlite
+            call operhighlite
+            call parenhighlite
+         end
+/*********************************************************************/
+/* Highlight SHELL, PYTHON, and JAVA, since we have to turn off      */
+/* HILITE OTHER to support ASCII highlighting.                       */
+/*********************************************************************/
+      if usrhilng = 'SHELL' | usrhilng = 'PYTHON' |,
+         usrhilng = 'JAVA' then
+         do
+            #lines = length(zdata) / zwidth
+            call operhighlite
+            call parenhighlite
+            quotechar = '"'
+            call quotehighlite(quotechar)
+         end
+/*********************************************************************/
+/* The first thing we have to do is highlight comments so that none  */
+/* of the text bounded by the comments will be chosen for further    */
+/* highlighting.  Each language is handled individually.  ZDATA will */
+/* be broken down into individual lines that will be reviewed for    */
+/* comments.                                                         */
+/*********************************************************************/
+      select
+/*********************************************************************/
+/* For Fortran, HILITE OTHER will leave a lot of highlighting errors */
+/* due to lack of comment highlighting.  Any lines with 'c', 'C',    */
+/* 'd', 'D', '*', or ! in column 1, or ! in any column not part of   */
+/* quoted string, will be highlighted as a comment until the end of  */
+/* the line.                                                         */
+/*********************************************************************/
+         when (usrhilng = 'FORTRAN') then
+            do
+               #lines = length(zdata) / zwidth
+               do i = 0 to #lines - 1
+                  strtpos = (i * zwidth) + 1
+                  endpos  = ((i + 1) * zwidth) + 1
+                  totchar = i * zwidth
+                  parse var zdata =(strtpos) linedata =(endpos)
+                  parse var zshadow =(strtpos) shaddata =(endpos)
+                  parse var linedata 2 lnum 8 . 9 comment .
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+                  if lnum = '******' |,
+                     lnum = '      ' |,
+                     datatype(lnum) <> 'NUM' then
+                     iterate i
+                  parse var linedata 2 comchar 3 .
+                  if (comchar = 'c' |,
+                      comchar = 'C' |,
+                      comchar = 'd' |,
+                      comchar = 'D' |,
+                      comchar = '*' |,
+                      comchar = '!') then
+                     compos = 2
+                  else
+                     compos = pos('!',linedata)
+                  if compos > 0 then
+                     do
+                        compend = compos + 1
+                        parse var shaddata =(compos) comshad =(compend)
+                        if comshad <> 'Q' & comshad <> 'C' then
+                           zshadow = overlay(,
+                                     copies('C',zwidth - compos),,
+                                     zshadow,,
+                                     totchar+compos,zwidth - compos)
+                     end
+               end
+            end
+/*********************************************************************/
+/* HILITE OTHER handles all slash asterisk style comments, so we     */
+/* have to add code to handle the // type comment.  We will do that  */
+/* by breaking down zdata into individual lines and looking for any  */
+/* // characters that are either not already in a comment or a       */
+/* quoted string.  Anything else will highlight as a comment to the  */
+/* end of the line.                                                  */
+/* Languages affected - Go, Java, JavaScript, Kotlin, PHP, and       */
+/* TypeScript.                                                       */
+/*********************************************************************/
+         when (usrhilng = 'GO'          |,
+               usrhilng = 'JAVA'        |,
+               usrhilng = 'JAVASCRIPT'  |,
+               usrhilng = 'KOTLIN'      |,
+               usrhilng = 'PHP'         |,
+               usrhilng = 'TYPESCRIPT') then
+            do
+               #lines = length(zdata) / zwidth
+               do i = 0 to #lines - 1
+                  strtpos = (i * zwidth) + 1
+                  endpos  = ((i + 1) * zwidth) + 1
+                  totchar = i * zwidth
+                  parse var zdata =(strtpos) linedata =(endpos)
+                  parse var zshadow =(strtpos) shaddata =(endpos)
+                  compos = pos('//',linedata)
+                  if compos > 0 then
+                     do
+                        compend = compos + 2
+                        parse var shaddata =(compos) comshad =(compend)
+                        if comshad <> 'QQ' & comshad <> 'CC' then
+                           zshadow = overlay(,
+                                     copies('C',zwidth - compos),,
+                                     zshadow,,
+                                     totchar+compos,zwidth - compos)
+                     end
+                  if usrhilng = 'PHP' then
+                     do
+                        compos = pos('#',linedata)
+                        if compos > 0 then
+                           do
+                              compend = compos + 1
+                              parse var shaddata =(compos) comshad =(compend)
+                              if comshad <> 'Q' & comshad <> 'C' then
+                                 zshadow = overlay(,
+                                           copies('C',zwidth - compos),,
+                                           zshadow,,
+                                           totchar+compos,zwidth - compos)
+                           end
+                     end
+               end
+            end
+/*********************************************************************/
+/* For Perl, Python, R, Ruby, and SHELL, lines with '#' in any       */
+/* column (for R, column 1) not part of a quoted string, will be     */
+/* highlighted as a comment until the end of the line.               */
+/*********************************************************************/
+         when (usrhilng = 'PERL'   |,
+               usrhilng = 'PYTHON' |,
+               usrhilng = 'R'      |,
+               usrhilng = 'RUBY'   |,
+               usrhilng = 'SHELL') then
+            do
+               #lines = length(zdata) / zwidth
+               do i = 0 to #lines - 1
+                  strtpos = (i * zwidth) + 1
+                  endpos  = ((i + 1) * zwidth) + 1
+                  totchar = i * zwidth
+                  parse var zdata =(strtpos) linedata =(endpos)
+                  parse var zshadow =(strtpos) shaddata =(endpos)
+                  compos = pos('#',linedata)
+                  if (compos > 0 & (usrhilng = 'R' & compos = 9)) |,
+                     (compos > 0 & usrhilng <> 'R') then
+                        do
+                           compend = compos + 1
+                           parse var shaddata =(compos) comshad,
+                                              =(compend)
+                           if comshad <> 'Q' & comshad <> 'C' then
+                              zshadow = overlay(,
+                                        copies('C',zwidth - compos),,
+                                        zshadow,,
+                                        totchar+compos,zwidth - compos)
+                        end
+               end
+            end
+/*********************************************************************/
+/* For SQL, HILITE OTHER will handle all the slash asterisk style    */
+/* comments, so we have to add code to handle the -- type comment.   */
+/* We will do that by breaking down zdata into individual lines and  */
+/* looking for any -- characters that are either not already in a    */
+/* comment or a quoted string.  Anything else will highlight as a    */
+/* comment to the end of the line.                                   */
+/*********************************************************************/
+         when (usrhilng = 'SQL') then
+            do
+               #lines = length(zdata) / zwidth
+               do i = 0 to #lines - 1
+                  strtpos = (i * zwidth) + 1
+                  endpos  = ((i + 1) * zwidth) + 1
+                  totchar = i * zwidth
+                  parse var zdata =(strtpos) linedata =(endpos)
+                  parse var zshadow =(strtpos) shaddata =(endpos)
+                  compos = pos('--',linedata)
+                  if compos > 0 then
+                     do
+                        compend = compos + 2
+                        parse var shaddata =(compos) comshad =(compend)
+                        if comshad <> 'QQ' & comshad <> 'CC' then
+                           zshadow = overlay(,
+                                     copies('C',zwidth - compos),,
+                                     zshadow,,
+                                     totchar+compos,zwidth - compos)
+                     end
+               end
+            end
+/*********************************************************************/
+/* For FLOWASM, HILITE ASM will handle normal assembler comments, so */
+/* so we have to add code to handle asterisk or slash asterisk in    */
+/* any column, provided they are the first character(s) on the line  */
+/* (no closing slash asterisk is required).                          */
+/*********************************************************************/
+         when (usrhilng = 'FLOWASM') then
+            do
+               #lines = length(zdata) / zwidth
+               do i = 0 to #lines - 1
+                  strtpos = (i * zwidth) + 1
+                  endpos  = ((i + 1) * zwidth) + 1
+                  totchar = i * zwidth
+                  parse var zdata =(strtpos) linedata =(endpos)
+                  parse var zshadow =(strtpos) shaddata =(endpos)
+/*********************************************************************/
+/* Eat the attribute, line number, and attrbute at the beginning of  */
+/* the line, then comment will hold a comment if it exists.  Verify  */
+/* the comment, then set the strings appropriately for the position  */
+/* checks in the code resetting the shadow variable for comments.    */
+/*********************************************************************/
+                  parse var linedata 2 lnum 8 . 9 comment .
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+                  if lnum = '******' |,
+                     lnum = '      ' |,
+                     datatype(lnum) <> 'NUM' then
+                     iterate i
+                  parse var comment 1 asterisk 2 . 1 slashast 3 .
+                  if asterisk = '*' then
+                     do
+                        comstring = '*'
+                        shadquote = 'Q'
+                        shadcomnt = 'C'
+                     end
+                  if slashast = '/*' then
+                     do
+                        comstring = '/*'
+                        shadquote = 'QQ'
+                        shadcomnt = 'CC'
+                     end
+                  if asterisk = '*' | slashast = '/*' then
+                     do
+                        compos = pos(comstring,linedata)
+                        compend = compos + length(comstring)
+                        parse var shaddata =(compos) comshad =(compend)
+                        if comshad <> shadquote &,
+                           comshad <> shadcomnt then
+                           zshadow = overlay(,
+                                     copies('C',zwidth - compos),,
+                                     zshadow,,
+                                     totchar+compos,zwidth - compos)
+                     end
+               end
+            end
+         otherwise
+            nop
+      end
+/*********************************************************************/
+/* For XMLASCII, we have to process comments, quoted strings, and    */
+/* XML tags.                                                         */
+/*********************************************************************/
+      if usrhilng = 'XMLASCII' then
+         call xmlasciihighlight
+/*********************************************************************/
+/* For GO, we have to process quoted strings, parens, and operators. */
+/*********************************************************************/
+      if usrhilng = 'GO' then
+         call gohighlite
+/*********************************************************************/
+/* For Ruby, we also have to process block comments started by       */
+/* =BEGIN in column 1 and ended with =END in column 1.               */
+/*********************************************************************/
+      if usrhilng = 'RUBY' then
+         call rubycomment
+/*********************************************************************/
+/* Process FLOWASM highlighting.                                     */
+/*********************************************************************/
+      if usrhilng = 'FLOWASM' then
+         call flowasmhighlite
+/*********************************************************************/
+/* Copy zdata to tempdata, then manipulate tempdata to facilitate    */
+/* language highlighting.  Translate all attribute bytes specified   */
+/* in ISREDDE2 or ISREDDE4 to blanks, and translate all braces,      */
+/* brackets, and parens, and special characters to blanks.  Finally, */
+/* uppercase tempdata to test against blank-delimited, uppercased    */
+/* keywords.  This makes it simpler to match the keywords, since     */
+/* some programmers prefer to capitalize only the first letter of    */
+/* every keyword.                                                    */
+/*********************************************************************/
+      tempdata = zdata
+/*********************************************************************/
+/* Bypass special character translation to blanks for XMLASCII and   */
+/* PANELX.                                                           */
+/*********************************************************************/
+      if usrhilng <> 'XMLASCII' & usrhilng <> 'PANELX' then
+         do
+/*********************************************************************/
+/* Convert any non-displayable characters to blanks for delimiting   */
+/* keywords.  The double commas are necessary to make the translate  */
+/* command work properly.  The first comma is the comma for the      */
+/* function, the second comma will continue the line.                */
+/*********************************************************************/
+            tempdata = translate(tempdata,,
+               '                          ',,
+               '152A2B2F141B1C260102030405060708090A0B0C0D1316171D20'x)
+/*********************************************************************/
+/* Translate all special characters to blanks in order to properly   */
+/* delimit keywords.  ACS routines will not translate '&' characters */
+/* for read-only and read-write variables in ACS routines.  SAS will */
+/* not translate '%' characters for SAS macro routines.  Thanks to   */
+/* Thomas Liu for the SAS improvements.                              */
+/*********************************************************************/
+            select
+               when (usrhilng = 'SAS') then /* SAS needs % character */
+                  tempdata = translate(tempdata,,
+                                       '                     ',,
+                                       '{}Ý¨()#+-*/=<>&¬|:;, ')
+               when (usrhilng = 'ACS') then /* ACS needs & character */
+                  tempdata = translate(tempdata,,
+                                       '                     ',,
+                                       '{}Ý¨()#+-*/=<>¬|:;%, ')
+               otherwise    /* Translate all special chars to blanks */
+                  tempdata = translate(tempdata,,
+                                       '                      ',,
+                                       '{}Ý¨()#+-*/=<>&¬|:;%, ')
+            end
+            if usrhilng <> 'R' then
+               parse upper var tempdata tempdata
+         end
+/*********************************************************************/
+/* Loop through each keyword for the language selected.  Start in    */
+/* column 2, and search until offset is 0, meaning the keyword was   */
+/* not found.  Bypass keyword highlighting for PANELX, which will    */
+/* be handled in the new panelxhighlite procedure separately.        */
+/*********************************************************************/
+      if usrhilng <> 'PANELX' then
+      do i = 1 to kw.0
+         strt = 2
+         offset = 1
+         /* Do until no more instances of this keyword are found */
+         do while (offset > 0)
+            offset = pos(kw.i,tempdata,strt)
+            if offset > 0 then
+               do
+/*********************************************************************/
+/* Change the highlighting only if ISPF has set the default          */
+/* highlighting (attribute character 'D').  The clr. array holds the */
+/* attribute byte for highlighting (default is 'R' for red, but      */
+/* keywords can be highlighted in other colors by changing the color */
+/* character in the clr array).                                      */
+/*********************************************************************/
+                line# = (offset % zwidth) + 1
+                strtpos = ((line# - 1) * zwidth) + 1
+                endpos  = (line# * zwidth) + 1
+                parse var zdata =(strtpos) linedata =(endpos)
+                parse var linedata 2 lnum 8 .
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+                if lnum = '******' |,
+                   lnum = '      ' |,
+                   datatype(lnum) <> 'NUM' then
+                   nop
+                else
+                select
+                   when (substr(zshadow,offset+1,length(atr.i)) =,
+                         atr.i) then
+                      zshadow =,
+                         overlay(clr.i,zshadow,offset+1,length(clr.i))
+                   when ((usrhilng = 'GO' |,
+                          usrhilng = 'SHELL' |,
+                          usrhilng = 'PYTHON' |,
+                          usrhilng = 'JAVA') &,
+                         substr(zshadow,offset+1,length(clr.i)) <>,
+                         copies('C',length(clr.i)) &,
+                         substr(zshadow,offset+1,length(clr.i)) <>,
+                         copies('Q',length(clr.i))) then
+                      zshadow =,
+                         overlay(clr.i,zshadow,offset+1,length(clr.i))
+                   when (usrhilng = 'XMLASCII' &,
+                         substr(zshadow,offset,length(clr.i)) <>,
+                         copies('C',length(clr.i))) then
+                      zshadow =,
+                         overlay(clr.i,zshadow,offset,length(clr.i))
+                   when (usrhilng = 'SAS' &,
+                         substr(zshadow,offset+1,length(clr.i)) <>,
+                         copies('C',length(clr.i)) &,
+                         substr(zshadow,offset+1,length(clr.i)) <>,
+                         copies('Q',length(clr.i)) &,
+                         substr(zshadow,offset+1,length(clr.i)) <>,
+                         copies(' ',length(clr.i))) then
+                      zshadow =,
+                         overlay(clr.i,zshadow,offset+1,length(clr.i))
+                   otherwise
+                      nop
+                end
+/*********************************************************************/
+/* Increment strt to begin the next search after the current found   */
+/* keyword.                                                          */
+/*********************************************************************/
+                strt = offset + length(kw.i)
+               end
+         end
+      end
+   end
+/*********************************************************************/
+/* This code will highlight braces and brackets.  The algorithms on  */
+/* the Web recommended a stack data structure to push and pop        */
+/* open/close pairs for parens, braces, and brackets.  Intialize the */
+/* "stacks" obracpos for braces, and obrakpos for brackets, and the  */
+/* variables representing the stack levels obrac#, and obrak#.       */
+/*********************************************************************/
+obracpos. = 0
+obrakpos. = 0
+obrac#    = 0
+obrak#    = 0
+/*********************************************************************/
+/* Set hbcolor to the colors for each level of highlighting, white,  */
+/* red, turquoise, pink, and yellow.                                 */
+/*********************************************************************/
+hbcolor   = 'WRTPY'
+/*********************************************************************/
+/* If the user selected brace or bracket highlighting, or both, read */
+/* zdata and zshadow a character at a time to find braces and/or     */
+/* brackets in zdata, and their current attribute byte highlighting  */
+/* in zshadow.                                                       */
+/*********************************************************************/
+if usrhibrc = 'YES' | usrhibrk = 'YES' then
+   do i = 1 to length(zdata)
+      parse var zdata =(i) char +1 .
+      parse var zshadow =(i) shad +1 .
+/*********************************************************************/
+/* If the user selected brace highlighting, process any braces not   */
+/* in quotes (indicated by attribute byte of 'Q' in zshadow).        */
+/*********************************************************************/
+      if usrhibrc = 'YES' then
+         select
+            when (char = '{' & shad <> 'Q' & shad <> 'C') then
+               do
+/*********************************************************************/
+/* For the open brace, increment obrac# and save the position of the */
+/* open brace for highlighting later ("PUSH" the open brace onto the */
+/* stack).                                                           */
+/*********************************************************************/
+                  obrac#          = obrac# + 1
+                  obracpos.obrac# = i
+               end
+/*********************************************************************/
+/* For the close brace, check to see if the open brace stack has any */
+/* elements.  If obrac# is 0, then change the attribute byte to 'Z'  */
+/* in zshadow (reverse pink, indicating a mismatched close brace).   */
+/*********************************************************************/
+            when (char = '}' & shad <> 'Q' & shad <> 'C') then
+               if obrac# = 0 then
+                  zshadow = overlay('Z',zshadow,i,1)
+               else
+                  do
+/*********************************************************************/
+/* If there is an element on the open brace stack, then determine    */
+/* color by dividing obrac# by 5 and using the remainder as an index */
+/* into the hbcolor string.  Overlay the zshadow attribute byte for  */
+/* the close brace with that color, and then overlay the zshadow     */
+/* attribute byte for the open brace using the saved postion.        */
+/*********************************************************************/
+                     bclrpos = obrac# // 5
+                     if bclrpos = 0 then
+                        bclrpos = 5
+                     battr   = substr(hbcolor,bclrpos,1)
+                     zshadow = overlay(battr,zshadow,i,1)
+                     zshadow = overlay(battr,zshadow,obracpos.obrac#,1)
+/*********************************************************************/
+/* Decrementing obrac# is the equivalent of a "POP" operation on the */
+/* open brace stack.                                                 */
+/*********************************************************************/
+                     obrac#  = obrac# - 1
+                  end
+            otherwise
+               nop
+         end
+/*********************************************************************/
+/* If the user selected bracket highlighting, process any brackets   */
+/* not in quotes (indicated by attribute byte of 'Q' in zshadow), or */
+/* comments (indicated by attribute byte of 'C' in zshadow).         */
+/*********************************************************************/
+      if usrhibrk = 'YES' then
+         select
+/*********************************************************************/
+/* For the open bracket, increment obrak# and save the position of   */
+/* the open bracket for highlighting later ("PUSH" the open bracket  */
+/* onto the stack).                                                  */
+/*********************************************************************/
+            when (char = 'Ý' & shad <> 'Q' & shad <> 'C') then
+               do
+                  obrak#          = obrak# + 1
+                  obrakpos.obrak# = i
+               end
+/*********************************************************************/
+/* For the close bracket, check to see if the open bracket stack has */
+/* any elements.  If obrak# is 0, then change the attribute byte to  */
+/* 'Z' in zshadow (reverse pink, indicating a mismatched close       */
+/* bracket).                                                         */
+/*********************************************************************/
+            when (char = '¨' & shad <> 'Q' & shad <> 'C') then
+               if obrak# = 0 then
+                  zshadow = overlay('Z',zshadow,i,1)
+               else
+                  do
+/*********************************************************************/
+/* If there is an element on the open bracket stack, then determine  */
+/* color by dividing obrak# by 5 and using the remainder as an index */
+/* into the hbcolor string.  Overlay the zshadow attribute byte for  */
+/* the close bracket with that color, and then overlay the zshadow   */
+/* attribute byte for the open bracket using the saved postion.      */
+/*********************************************************************/
+                     bclrpos = obrak# // 5
+                     if bclrpos = 0 then
+                        bclrpos = 5
+                     battr   = substr(hbcolor,bclrpos,1)
+                     zshadow = overlay(battr,zshadow,i,1)
+                     zshadow = overlay(battr,zshadow,obrakpos.obrak#,1)
+/*********************************************************************/
+/* Decrementing obrak# is the equivalent of a "POP" operation on the */
+/* open bracket stack.                                               */
+/*********************************************************************/
+                     obrak#  = obrak# - 1
+                  end
+            otherwise
+               nop
+         end
+   end
+/*********************************************************************/
+/* If there are any remaining entries on open brace stack, highlight */
+/* those characters with attribute byte 'Z' (reverse pink).          */
+/*********************************************************************/
+if usrhibrc = 'YES' then
+   do i = 1 to obrac#
+      zshadow = overlay('Z',zshadow,obracpos.i,1)
+   end
+/*********************************************************************/
+/* If there are any remaining entries on open bracket stack,         */
+/* highlight those characters with attribute byte 'Z' (reverse       */
+/* pink).                                                            */
+/*********************************************************************/
+if usrhibrk = 'YES' then
+   do i = 1 to obrak#
+      zshadow = overlay('Z',zshadow,obrakpos.i,1)
+   end
+call isprexpx('T')
+exit
+/*********************************************************************/
+/* For XMLASCII, we have to process comments, XML tags, and quoted   */
+/* strings.                                                          */
+/*********************************************************************/
+xmlasciihighlight :
+#lines = length(zdata) / zwidth
+begxmlcommpos  = 0
+endxmlcommpos  = 0
+begxmlquotepos = 0
+endxmlquotepos = 0
+mlcomment      = 0
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var zshadow =(strtpos) shaddata =(endpos)
+   begxmlcommpos = pos('<!--',linedata)
+   endxmlcommpos = pos('-->',linedata)
+/*********************************************************************/
+/* Process the various forms of comments.  One-line comment, multi-  */
+/* line comments, and end comment without a beginning comment.       */
+/*********************************************************************/
+   select
+      when (begxmlcommpos > 0 & endxmlcommpos > 0) then
+         do /* one-line comment */
+            comlen = endxmlcommpos - begxmlcommpos + 3
+            compos = strtpos + begxmlcommpos - 1
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+         end
+      when (begxmlcommpos > 0 & endxmlcommpos = 0) then
+         do /* begin multi-line comment */
+            mlcomment = 1
+            compos  = strtpos + begxmlcommpos - 1
+            comlen  = zwidth - begxmlcommpos
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+         end
+      when (begxmlcommpos = 0 & endxmlcommpos > 0 & mlcomment) then
+         do /* end multi-line comment */
+            mlcomment = 0
+            compos = strtpos + 7
+            comlen = endxmlcommpos + 3
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+         end
+      when (begxmlcommpos = 0 & endxmlcommpos = 0 & mlcomment) then
+         do /* continue multi-line comment */
+            compos = strtpos + 7
+            comlen = zwidth - 7
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+         end
+      when (begxmlcommpos = 0 & endxmlcommpos > 0) then
+         do /* end multi-line comment */
+            mlcomment = 0
+            compos = strtpos + 7
+            comlen = endxmlcommpos + 3
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+            do j = 0 to i
+               comlen = zwidth - 7
+               compos = (j * zwidth) + 9
+            zshadow = overlay(copies('C',comlen),zshadow,compos,comlen)
+            end
+         end
+      otherwise
+         nop
+   end
+/*********************************************************************/
+/* Process the XML tags.  Since multiple tags can be on a line, loop */
+/* until all tags are found.                                         */
+/*********************************************************************/
+   srchpos = 1
+   begxmltagpos = pos('<',linedata,srchpos)
+   endxmltagpos = pos('>',linedata,srchpos)
+   do while (begxmltagpos > 0 & endxmltagpos > 0)
+      if begxmltagpos > 0 & pos('<!--',linedata) <> begxmltagpos then
+         select
+            when (begxmltagpos > 0 & endxmltagpos > 0 &,
+                  endxmltagpos > begxmltagpos) then
+               do
+                  taglen = endxmltagpos - begxmltagpos + 1
+                  tagpos = strtpos + begxmltagpos - 1
+                  if substr(zshadow,tagpos,taglen) <>,
+                     copies('C',taglen) then
+       zshadow = overlay(copies('P',taglen),zshadow,tagpos,taglen)
+               end
+            otherwise
+               nop
+          end
+      srchpos = endxmltagpos + 1
+      begxmltagpos = pos('<',linedata,srchpos)
+      endxmltagpos = pos('>',linedata,srchpos)
+   end
+/*********************************************************************/
+/* Process quoted strings.  Since multiple quoted strings can be on  */
+/* a line, loop until all quoted strings on the line are found.      */
+/*********************************************************************/
+   srchpos = 1
+   begquotepos = pos('"',linedata)
+   endquotepos = pos('"',linedata,begquotepos+1)
+   do while (begquotepos > 0 & endquotepos > 0)
+      select
+         when (begquotepos > 0 & endquotepos > 0) then
+            do
+               quotelen = endquotepos - begquotepos + 1
+               quotepos = strtpos + begquotepos - 1
+               if substr(zshadow,quotepos,quotelen) <>,
+                  copies('C',quotelen) then
+          zshadow = overlay(copies('Q',quotelen),zshadow,quotepos,quotelen)
+            end
+         otherwise
+            nop
+      end
+      srchpos = endquotepos + 1
+      begquotepos = pos('"',linedata,srchpos)
+      endquotepos = pos('"',linedata,begquotepos+1)
+   end
+end
+return
+/*********************************************************************/
+/* For GO, we have to process quoted strings and parens.             */
+/*********************************************************************/
+gohighlite :
+/*********************************************************************/
+/* Process quoted strings.  Since multiple quoted strings can be on  */
+/* a line, loop until all quoted strings on the line are found.      */
+/*********************************************************************/
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var zshadow =(strtpos) shaddata =(endpos)
+   srchpos = 1
+   begquotepos = pos('"',linedata)
+   endquotepos = pos('"',linedata,begquotepos+1)
+   do while (begquotepos > 0 & endquotepos > 0)
+      select
+         when (begquotepos > 0 & endquotepos > 0) then
+            do
+               quotelen = endquotepos - begquotepos + 1
+               quotepos = strtpos + begquotepos - 1
+               if substr(zshadow,quotepos,quotelen) <>,
+                  copies('C',quotelen) then
+          zshadow = overlay(copies('Q',quotelen),zshadow,quotepos,quotelen)
+            end
+         otherwise
+            nop
+      end
+      srchpos = endquotepos + 1
+      begquotepos = pos('"',linedata,srchpos)
+      endquotepos = pos('"',linedata,begquotepos+1)
+   end
+end
+call parenhighlite
+call operhighlite
+return
+/*********************************************************************/
+/* For Ruby, we need to detect =BEGIN and =END to delimit block      */
+/* comments.                                                         */
+/*********************************************************************/
+rubycomment :
+#lines = length(zdata) / zwidth
+bcomment = 0
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var zshadow =(strtpos) shaddata =(endpos)
+   parse upper var linedata 9 rubybeg 15 . 9 rubyend 13 .
+   if rubybeg = '=BEGIN' then
+      bcomment = 1
+   if rubyend = '=END' then
+      bcomment = 0
+   if bcomment | rubyend = '=END' then
+      zshadow = overlay(copies('C',zwidth-9),zshadow,totchar+9,zwidth-9)
+end
+return
+/*********************************************************************/
+/* For FLOWASM, we need to detect continuation characters for        */
+/* statements ending in commas.  FLOWASM does not require a          */
+/* continuation character in column 72, and does not require the     */
+/* continued line to start in column 16.                             */
+/*                                                                   */
+/* HILITE ASM parses code lines into Keyword <blank> Operand <blank> */
+/* Comment.  Keyword is highlighted with K, Operand with D, and      */
+/* Comment with C.  We need to detect a trailing comma on Operand,   */
+/* then change the K highlighting for the Keyword on the next line   */
+/* to D, and the D highlighting on the next line to C.               */
+/*********************************************************************/
+flowasmhighlite :
+#lines = length(zdata) / zwidth
+contcurrline = 0
+zshadlen = length(zshadow)
+do i = 0 to #lines - 1
+   if \contcurrline then
+      contprevline = 0
+   else
+      contprevline = 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var zshadow =(strtpos) shaddata =(endpos)
+   kw = ''
+   cc = ''
+   if \contprevline then
+      parse var linedata 2 lnum 8 . 9 kw opr comment 80 cc 81 .
+   else
+      parse var linedata 2 lnum 8 . 9 opr comment
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+   if lnum = '******' |,
+      lnum = '      ' |,
+      datatype(lnum) <> 'NUM' then
+      iterate i
+   if opr \= ',' then /* don't continue lines with comma placeholder */
+      do
+         oprlen = length(opr)
+         parse var opr =(oprlen) comma .
+         if comma = ',' & (cc = ' ' | cc = '00'x) then
+            contcurrline = 1
+         else
+            contcurrline = 0
+      end
+   if contprevline then
+      do
+         call checkquote
+         if rc = 8 then /* Bypass lines with no blanks */
+            iterate i
+/*********************************************************************/
+/* For continued lines, translate K keywords to D default, and D     */
+/* default to C comments.                                            */
+/*********************************************************************/
+         shaddata = translate(shaddata,'DC','KD')
+         endlen  = length(zshadow) - endpos
+         if endpos \= zshadlen then
+            zshadow = substr(zshadow,1,strtpos-1) || shaddata ||,
+                      substr(zshadow,endpos,endlen+1)
+         else
+            zshadow = substr(zshadow,1,strtpos-1) || shaddata
+/*********************************************************************/
+/* Now that the line is put together and the continuation handled,   */
+/* we have to go back over the line and highlight the arithmetic     */
+/* characters, parens, etc.                                          */
+/*********************************************************************/
+         searchchar = '=,+-*/<>&¬|:%'
+         sline = linedata
+         spos  = 1
+         slen  = length(linedata)
+         changeline = 0
+         do j = 1 to length(searchchar)
+            schar = substr(searchchar,j,1)
+            sline = substr(sline,spos,slen-spos+1)
+            charfound = 0
+            do until (\charfound)
+               scharpos = pos(schar,sline)
+               if scharpos <> 0 then
+                  do
+                     shaddata = substr(shaddata,1,scharpos-1) || ' ' ||,
+                       substr(shaddata,scharpos+1,slen-scharpos)
+                     changeline = 1
+                  end
+               else
+                  charfound = 0
+            end
+            if changeline then
+               zshadow = substr(zshadow,1,strtpos-1) || shaddata ||,
+                         substr(zshadow,endpos,endlen+1)
+         end
+         if zhiparen = 'ON' then
+            call flowasmparen
+         zshadow = substr(zshadow,1,strtpos-1) || shaddata ||,
+                   substr(zshadow,endpos,endlen+1)
+      end
+end
+return
+operhighlite:
+/*********************************************************************/
+/* Highlight operators in yellow for PANELX, GO, SHELL, PYTHON, and  */
+/* JAVA.                                                             */
+/*********************************************************************/
+operstr = ''
+bodyareaflag = 0
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var linedata 2 lnum 8 . 9 opr comment
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+   if lnum = '******' |,
+      lnum = '      ' |,
+      datatype(lnum) <> 'NUM' then
+      iterate i
+   parse var zshadow =(strtpos) shaddata =(endpos)
+/*********************************************************************/
+/* Specify the operators for each language to highlight them in ,    */
+/* yellow.                                                           */
+/*********************************************************************/
+   select
+      when (usrhilng = 'PANELX') then
+         operstr = '&|<>¬=)'
+      when (usrhilng = 'SHELL') then
+         operstr = '$%&|*/+-<>:!=¬~'
+      when (usrhilng = 'JAVA' | usrhilng = 'GO') then
+         operstr = '%&|*/+-<>:!=¬'
+      when (usrhilng = 'PYTHON') then
+         operstr = '%&|*/+-<>:!=¬~'
+      otherwise
+         nop
+   end
+   k = length(operstr)
+   do j = 1 to k
+      operstrt = j
+      parse var operstr =(operstrt) operchar +1 .
+      operpos = pos(operchar,linedata)
+      do while (operpos > 0)
+         select
+            when (operchar = ')' & operpos = 9) then
+               do
+                  parse var linedata =(operpos) cmd .
+                  if cmd = ')BODY' | cmd = ')AREA' then
+                     do
+                        bodyareaflag = 1
+                        iterate j
+                     end
+                  else
+                     do
+                        bodyareaflag = 0
+                        iterate j
+                     end
+               end
+            when (bodyareaflag) then
+               iterate j
+            when (operchar = ')') then
+               iterate j
+            otherwise
+               nop
+         end
+         shadoperpos = strtpos + operpos - 1
+         if substr(zshadow,shadoperpos,1) <> 'C' &,
+            substr(zshadow,shadoperpos,1) <> 'Q' &,
+            substr(zshadow,shadoperpos,1) <> 'S' then
+            zshadow = overlay('O',zshadow,shadoperpos,1)
+         operpos = pos(operchar,linedata,operpos+1)
+      end
+   end
+end
+return
+flowasmparen :
+/*********************************************************************/
+/* After handling special characters, we now have to handle parens.  */
+/* If PAREN highlighting is enabled, we have to highlight the parens */
+/* where previously they were highlighted in red as a keyword.       */
+/*********************************************************************/
+oparenpos. = 0
+oparen#   = 0
+/*********************************************************************/
+/* Set hbcolor to the colors for each level of highlighting, white,  */
+/* red, turquoise, pink, and yellow.                                 */
+/*********************************************************************/
+hbcolor   = 'WRTPY'
+/*********************************************************************/
+/* If the user selected paren highlighting, proceed.                 */
+/*********************************************************************/
+do k = 1 to slen
+   parse var linedata =(k) char +1 .
+   parse var shaddata =(k) shad +1 .
+/*********************************************************************/
+/* If the user selected paren highlighting, process any parens not   */
+/* in quotes (indicated by attribute byte of 'Q' in zshadow).        */
+/*********************************************************************/
+   select
+      when (char = '(' & pos(shad,'QCWRTPY') = 0) then
+         do
+/*********************************************************************/
+/* For the open paren, increment oparen# and save the position of    */
+/* the open paren for highlighting later ("PUSH" the open paren onto */
+/* the stack.                                                        */
+/*********************************************************************/
+            oparen#         = oparen# + 1
+            oparenpos.oparen# = k
+         end
+/*********************************************************************/
+/* For the close paren, check to see if the open paren stack has any */
+/* elements.  If oparen# is 0, then change the attribute byte to 'Z' */
+/* in zshadow (reverse pink, indicating a mismatched close paren).   */
+/*********************************************************************/
+      when (char = ')' & pos(shad,'QCWRTPY') = 0) then
+         if oparen# = 0 then
+            shaddata = overlay('Z',shaddata,k,1)
+         else
+            do
+/*********************************************************************/
+/* If there is an element on the open paren stack, then determine    */
+/* color by dividing oparen# by 5 and using the remainder as an      */
+/* index into the hbcolor string.  Overlay the zshadow attribute     */
+/* byte for the close paren with that color, and then overlay the    */
+/* shadow attribute byte for the open paren using the saved postion. */
+/*********************************************************************/
+               bclrpos = oparen# // 5
+               if bclrpos = 0 then
+                  bclrpos = 5
+               battr    = substr(hbcolor,bclrpos,1)
+               shaddata = overlay(battr,shaddata,k,1)
+               shaddata = overlay(battr,shaddata,oparenpos.oparen#,1)
+/*********************************************************************/
+/* Decrementing oparen# is the equivalent of a "POP" operation on    */
+/* the open paren stack.                                             */
+/*********************************************************************/
+                  oparen# = oparen# - 1
+            end
+         otherwise
+            nop
+      end
+   end
+/*********************************************************************/
+/* If there are any remaining entries on open paren stack, highlight */
+/* those characters with attribute byte 'Z' (reverse pink).          */
+/*********************************************************************/
+do l = 1 to oparen#
+   shaddata = overlay('Z',shaddata,oparenpos.l,1)
+end
+return
+/*********************************************************************/
+/* Check if opr and comment are across a quoted string with blanks.  */
+/* If they are, piece opr and comment together until the next blank  */
+/* not in a quoted string.  Also, if the last character of opr is a  */
+/* quote, then set that attribute to Q.  This is only valid for a    */
+/* continued line.                                                   */
+/*********************************************************************/
+checkquote :
+lenopr = length(opr)
+lencom = length(comment)
+if lenopr = 0 | lencom = 0 then /* Bypass lines with no blanks */
+   return(8)
+posopr = pos(opr,linedata)
+if substr(opr,lenopr,1) = "'" then  /* last pos of opr a quote? */
+   do
+      quotepos = pos("'",comment)
+      parse var comment "'" comment1 comment2
+      poscom1   = pos(comment1,linedata)
+      lencom1   = length(comment1)
+      poscom2   = pos(comment2,linedata)
+      lencom2   = length(comment2)
+      shaddata1 = substr(shaddata,poscom1,lencom1)
+      shaddata2 = substr(shaddata,poscom2,lencom2)
+      shaddata2 = translate(shaddata2,'C','Q')
+      #blanks1  = quotepos /* also includes blank for delimiting */
+      #blanks2  = lencom2-length(strip(comment2))
+      blanks1   = copies(' ',#blanks1)
+      blanks2   = copies(' ',#blanks2)
+      shaddata  = substr(shaddata,1,posopr+lenopr-2) || 'Q' ||,
+                  blanks1 || 'Q' || shaddata1 || blanks2 ||,
+                  shaddata2
+   end
+return(0)
+parenhighlite :
+/*********************************************************************/
+/* This code will highlight parentheses.  The algorithms on the Web  */
+/* recommended a stack data structure to push and pop open/close     */
+/* pairs for parens, braces, and brackets.  Intialize the "stack"    */
+/* oparnpos for parens, and the stack level oparn#.                  */
+/*********************************************************************/
+oparnpos. = 0
+oparn#    = 0
+/*********************************************************************/
+/* Set hbcolor to the colors for each level of highlighting, white,  */
+/* red, turquoise, pink, and yellow.                                 */
+/*********************************************************************/
+hbcolor   = 'WRTPY'
+bodyareaflag = 0
+do i = 1 to length(zdata)
+   parse var zdata =(i) char +1 .
+   parse var zshadow =(i) shad +1 .
+   linepos = i // zwidth
+/*********************************************************************/
+/* If the user selected paren highlighting, process any parens not   */
+/* in quotes (indicated by attribute byte of 'Q' in zshadow).        */
+/*********************************************************************/
+   select
+      when (char = ')' & linepos = 9) then
+         do
+            parse var zdata =(i) cmd .
+            if cmd = ')BODY' | cmd = ')AREA' then
+               do
+                  bodyareaflag = 1
+                  iterate i
+               end
+            else
+               do
+                  bodyareaflag = 0
+                  iterate i
+               end
+         end
+      when (bodyareaflag) then
+         iterate i
+      when (char = '(' & shad <> 'Q' & shad <> 'C') then
+         do
+/*********************************************************************/
+/* For the open paren, increment oparn# and save the position of the */
+/* open paren for highlighting later ("PUSH" the open paren onto the */
+/* stack).                                                           */
+/*********************************************************************/
+            oparn#          = oparn# + 1
+            oparnpos.oparn# = i
+         end
+/*********************************************************************/
+/* For the close paren, check to see if the open paren stack has any */
+/* elements.  If oparn# is 0, then change the attribute byte to 'Z'  */
+/* in zshadow (reverse pink, indicating a mismatched close paren).   */
+/*********************************************************************/
+      when (char = ')' & shad <> 'Q' & shad <> 'C') then
+         if oparn# = 0 then
+            zshadow = overlay('Z',zshadow,i,1)
+         else
+            do
+/*********************************************************************/
+/* If there is an element on the open brace stack, then determine    */
+/* color by dividing obrac# by 5 and using the remainder as an index */
+/* into the hbcolor string.  Overlay the zshadow attribute byte for  */
+/* the close brace with that color, and then overlay the zshadow     */
+/* attribute byte for the open brace using the saved postion.        */
+/*********************************************************************/
+               bclrpos = oparn# // 5
+               if bclrpos = 0 then
+                  bclrpos = 5
+               battr   = substr(hbcolor,bclrpos,1)
+               zshadow = overlay(battr,zshadow,i,1)
+               zshadow = overlay(battr,zshadow,oparnpos.oparn#,1)
+/*********************************************************************/
+/* Decrementing obrac# is the equivalent of a "POP" operation on the */
+/* open brace stack.                                                 */
+/*********************************************************************/
+               oparn#  = oparn# - 1
+            end
+      otherwise
+         nop
+   end
+end
+/*********************************************************************/
+/* If there are any remaining entries on open paren stack, highlight */
+/* those characters with attribute byte 'Z' (reverse pink).          */
+/*********************************************************************/
+do i = 1 to oparn#
+   zshadow = overlay('Z',zshadow,oparnpos.i,1)
+end
+quotehighlite :
+/*********************************************************************/
+/* Process quoted strings.  Since multiple quoted strings can be on  */
+/* a line, loop until all quoted strings on the line are found.      */
+/*********************************************************************/
+parse arg quotechar
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var linedata 2 lnum 8 . 9 opr comment
+   srchpos = 1
+   begquotepos = pos(quotechar,linedata)
+   endquotepos = pos(quotechar,linedata,begquotepos+1)
+   do while (begquotepos > 0 & endquotepos > 0)
+      select
+         when (begquotepos > 0 & endquotepos > 0) then
+            do
+               quotelen = endquotepos - begquotepos + 1
+               quotepos = strtpos + begquotepos - 1
+               if substr(zshadow,quotepos,quotelen) <>,
+                  copies('C',quotelen) then
+          zshadow = overlay(copies('Q',quotelen),zshadow,quotepos,quotelen)
+            end
+         otherwise
+            nop
+      end
+      srchpos = endquotepos + 1
+      begquotepos = pos(quotechar,linedata,srchpos)
+      endquotepos = pos(quotechar,linedata,begquotepos+1)
+   end
+end
+return
+panelxhighlite :
+/*********************************************************************/
+/* Highlight keywords for PANELX highlighting.                       */
+/*********************************************************************/
+bodyareaflag = 0
+attrflag = 0
+do i = 0 to #lines - 1
+   strtpos = (i * zwidth) + 1
+   endpos  = ((i + 1) * zwidth) + 1
+   totchar = i * zwidth
+   parse var zdata =(strtpos) linedata =(endpos)
+   parse var linedata 2 lnum 8 . 9 opr comment
+/*********************************************************************/
+/* Bypass 'Top of Data', 'Bottom of Data', blank lines, and NOTE,    */
+/* MSG, MASK, etc. lines.                                            */
+/*********************************************************************/
+   if lnum = '******' |,
+      lnum = '      ' |,
+      datatype(lnum) <> 'NUM' then
+      iterate i
+/*********************************************************************/
+/* Translate all non-displayable and special characters to blanks    */
+/* for keywords.  Two variables are needed, templine for all the     */
+/* panel keywords with ), like )ATTR, )BODY, etc., and templinex,    */
+/* for all other keywords.                                           */
+/*********************************************************************/
+   templine = translate(linedata,,
+      '                          ',,
+      '152A2B2F141B1C260102030405060708090A0B0C0D1316171D20'x)
+   templine = translate(templine,,
+                                  '                     ',,
+                                  '{}Ý¨(#+-*/=<>&¬|:;%, ')
+   templinex = translate(linedata,,
+      '                          ',,
+      '152A2B2F141B1C260102030405060708090A0B0C0D1316171D20'x)
+   templinex = translate(templine,,
+                                  '                      ',,
+                                  '{}Ý¨()#+-*/=<>&¬|:;%, ')
+   do j = 1 to kw.0
+/*********************************************************************/
+/* Use templinex for the majority of keywords, and templine for the  */
+/* ) keywords like )ATTR, )BODY, etc.                                */
+/*********************************************************************/
+      if j > 18 then
+         kwpos = pos(kw.j,templinex)
+      else
+         kwpos = pos(kw.j,templine)
+      do while (kwpos > 0)
+         kwchar = substr(kw.j,2,1)
+         select
+            when (kwchar = ')' & kwpos = 8) then
+               select
+                  when (kw.j = ' )BODY ' | kw.j = ' )AREA ') then
+                     do
+                        bodyareaflag = 1
+                        iterate i
+                     end
+                  when (kw.j = ' )ATTR ') then
+                     do
+                        attrflag = 1
+                        iterate i
+                     end
+                  otherwise
+                     do
+                        bodyareaflag = 0
+                        attrflag = 0
+                        iterate i
+                     end
+               end
+            when (bodyareaflag) then
+               iterate i
+            when (kwchar = ')') then
+               iterate j
+            otherwise
+               nop
+         end
+         shadkwpos = strtpos + kwpos - 1
+         ovrclr = clr.j
+         if kw.j = 'GE' & attrflag then
+            ovrclr = 'RR'
+         if substr(zshadow,shadkwpos+1,1) <> 'C' &,
+            substr(zshadow,shadkwpos+1,1) <> 'Q' &,
+            substr(zshadow,shadkwpos+1,1) <> 'S' then
+            zshadow = overlay(ovrclr,zshadow,shadkwpos+1,length(ovrclr))
+         kwpos = pos(kw.j,linedata,kwpos+1)
+      end
+   end
+end
+return

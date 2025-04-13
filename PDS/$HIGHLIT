@@ -1,0 +1,25 @@
+To use extended language highlighting, issue the HIGHLITE command
+with the following syntax:
+
+HIGHLITE language | OFF
+
+language = {ACS | CARLA | FLOWASM | FORTRAN | GO | JAVA | JAVASCRIPT |
+           JSON | KOTLIN | PANELX | PERL | PHP | PYTHON | R | RUBY | SAS |
+           SHELL | SQL | TYPESCRIPT | XMLASCII} | OFF (turns off extended
+           language highlighting).
+
+HIGHLITE BRACE toggles brace highlighting on and off.
+
+HIGHLITE BRACKET toggles bracket highlighting on and off.
+
+Note:  HIGHLITE BRACE/BRACKET may show incomplete pairs if opening/closing
+       brace/bracket is off the screen.
+
+HIGHLITE DISPLAY | DISP shows current state of HIGHLITE options.
+
+HIGHLITE HELP | ? displays this HELP text.
+
+Note:  NULLS ON STD is required for CUCI HIGHLITE to function correctly.
+       Invoking the HIGHLITE command will automatically set NULLS ON STD.
+       If you use NULLS ON ALL elsewhere in EDIT, you will need to issue
+       NULLS ON ALL after exiting CUCI HIGHLITE.

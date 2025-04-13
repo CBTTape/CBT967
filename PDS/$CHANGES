@@ -1,0 +1,733 @@
+***********************************************************************
+*                                                                     *
+*                         C H A N G E   L O G                         *
+*                         -------------------                         *
+*                                                                     *
+*    DATE      DESCRIPTION                                            *
+* ----------   ------------------------------------------------------ *
+*                                                                     *
+* 2024/12/11   V1R9 release (Total IBM Ideas delivered to date - 08   *
+*                            Total RFEs delivered to date      - 39)  *
+*                                                                     *
+*              Correct issue with ISRUMVC panel where a member is     *
+*              selected for copy, which results in message:           *
+*                                                                     *
+*                  ISRU535 Member name not allowed                    *
+*                                                                     *
+*              USRUMVC is modified to remove the parentheses and      *
+*              member name from zmmcdsn.                              *
+*                                                                     *
+*                  UMISRCVJ                                           *
+*                  USRUMVC                                            *
+*                                                                     *
+*              USREDDEX is modified to detect a quoted z/OS dataset   *
+*              name and not prepend the pathname if in Unix.          *
+*                                                                     *
+*                  USREDDEX                                           *
+*              *** Thanks to Michael Fleissig for this suggestion! ****
+*                                                                     *
+*              USRCCONF is modified to add support for UDLIST option  *
+*              Case-insensitive sort.                                 *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  USR@KYWD                                           *
+*                  USRCMOD                                            *
+*                  USRPMOD4                                           *
+*                                                                     *
+*              Modify USRCCONF panels to show whether the Mount Table *
+*              Column Arrangement display is by File System or Mount  *
+*              Point.                                                 *
+*                                                                     *
+*                  USRPMOD                                            *
+*                  USRUMNO2                                           *
+*                                                                     *
+*              Added article I wrote for Enterprise Systems Journal   *
+*              regarding ISPF Multi-logon support.                    *
+*                                                                     *
+*                  $MULTTSO                                           *
+*                  MULTITSO                                           *
+*                                                                     *
+*              Remove pathname substitution character from USRCCONF   *
+*              since it is already handled by ISPCCONF.               *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  USR@KYWD                                           *
+*                  USRCMOD                                            *
+*                  USRPMOD4                                           *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2023/07/04   V1R8 release (Total IBM Ideas delivered to date - 08   *
+*                            Total RFEs delivered to date      - 39)  *
+*                                                                     *
+*              IBM Z Hardware and Operating Systems Ideas formerly    *
+*              satisfied:                                             *
+*                                                                     *
+*              ZOS-I-3338 - Please Support SQL (Db2) highlighting in  *
+*                           ISPF Editor                               *
+*              ZOS-I-2887 - ISPCCONF - Add PF Key Definitions         *
+*              ZOS-I-2625 - Improve ISPF 3.17 by allowing CD on the   *
+*                           command line                              *
+*              ZOS-I-2203 - ISPF Edit highlighting for ACS routines   *
+*              ZOS-I-1679 - ISPF HILITE PLI - keywords missing        *
+*                                                                     *
+*              Fix issues and add capability to HIGHLITE:             *
+*                                                                     *
+*                - Modify PYTHON and JAVA highlighting to work in     *
+*                  both EBCDIC and ASCII mode.                        *
+*                - Correct operator strings for JAVA, PYTHON, SHELL,  *
+*                  and GO, to properly highlight all valid language   *
+*                  operators.                                         *
+*                - Add Python built-in functions.                     *
+*                - Correct highlighting errors for SHELL and PYTHON   *
+*                  by issuing HILITE OFF, and by individually         *
+*                  highlighting comments, quoted strings, keywords,   *
+*                  operators, and parens.  By turning off HILITE,     *
+*                  SHELL and PYTHON highlighting will work for ASCII  *
+*                  mode highlighting.  Also add code to prevent       *
+*                  keywords in MSG, NOTE, etc. lines.                 *
+*                - Create EDIT MACRO exec USREDDEM to process         *
+*                  HIGHLITE command by removing code from ISREDDE2    *
+*                  and ISREDDE4.  This also enables automatically     *
+*                  issuing NULLS ON STD so that CUCI highlighting     *
+*                  works correctly.                                   *
+*                                                                     *
+*                  $HIGHLIT                                           *
+*                  $MANHACJ                                           *
+*                  ISREDDE2                                           *
+*                  ISREDDE4                                           *
+*                  UMISRHIJ                                           *
+*                  USREDDEM                                           *
+*                  USREDDEX                                           *
+*                  USRHILIT                                           *
+*                                                                     *
+*              Correct issue with ISRUMVC panel no longer working     *
+*              because ZMMCDSN is not a null value, but instead has   *
+*              46 x'00' characters.  Create Rexx panel exit USRUMVC   *
+*              to check for 46 x'00' characters and prime ZMMCDSN     *
+*              with ZCLDSN.                                           *
+*                                                                     *
+*                  ISRUMVC                                            *
+*                  UMISRVCJ                                           *
+*                  USRUMVC                                            *
+*                                                                     *
+*              Add /* rexx */ identifier to the following execs so    *
+*              that HILITE AUTO will properly highlight these execs:  *
+*                                                                     *
+*                  USRUDSLI                                           *
+*                  USRUDSLP                                           *
+*                  USRUUID0                                           *
+*                                                                     *
+*              Consolidate all SHARE presentations into a single .zip *
+*              member in binary format:                               *
+*                                                                     *
+*                  $SHARZIP                                           *
+*                  SHAREZIP                                           *
+*              ***** Thanks to Colin Paice for this suggestion! ***** *
+*              ***** Thanks to Pedro Vera for his session use!  ***** *
+*                                                                     *
+* Customizing the ISPF HILITE Command.pdf      - SHARE in San Jose    *
+* Conley Bit Bucket CUCI Announcement 2017.pdf - SHARE in Phoenix     *
+* ISPF IS DEAD!  LONG LIVE ISPF! 2019.pdf      - SHARE in Pittsburgh  *
+* ISPF IS DEAD!  LONG LIVE ISPF! 2020.pdf      - SHARE in Boston      *
+* ISPF IS DEAD!  LONG LIVE ISPF! 2021.pdf      - SHARE Webinar        *
+* Conley Bit Bucket CUCI Update 2021.pdf       - SHARE Virtual        *
+* ISPF IS (NOT) DEAD!  LONG LIVE ISPF!.pdf     - SHARE in Columbus    *
+*                                                                     *
+*              Modify the USERMODS for V2R5.  Support the removal of  *
+*              the ISPF Client/Server component.  Include comments    *
+*              for V2R4 elements that still include the Download      *
+*              pulldown.                                              *
+*                                                                     *
+*                  UMBPXISJ                                           *
+*                  UMISCLMJ                                           *
+*                  UMISPCMJ                                           *
+*                  UMISRHIJ                                           *
+*                  UMISRPDJ                                           *
+*                  UMISRPXJ                                           *
+*                  UMISRUDJ                                           *
+*                  UMISRUUJ                                           *
+*                  UMISRVCJ                                           *
+*                  UMUSRCFJ                                           *
+*                                                                     *
+*              Remove download pulldown for the following panels at   *
+*              the V2R5 level:                                        *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  ISREDDE2                                           *
+*                  ISREDDE4                                           *
+*                  ISRUAASE                                           *
+*                  ISRUDSL0                                           *
+*                  ISRUUDL0                                           *
+*                  ISRUULP                                            *
+*                                                                     *
+*              Create panels for V2R4 that still include the Download *
+*              pulldown:                                              *
+*                                                                     *
+*                  ISR@PR24 (ISR@PRIM)                                *
+*                  ISRED224 (ISREDDE2)                                *
+*                  ISRED424 (ISREDDE4)                                *
+*                  ISRUAA24 (ISRUAASE)                                *
+*                  ISRUDS24 (ISRUDSL0)                                *
+*                  ISRUUD24 (ISRUUDL0)                                *
+*                  ISRUUL24 (ISRUULP)                                 *
+*                                                                     *
+*              Update ISPF highlighting module for V2R5 changes:      *
+*                                                                     *
+*                  ISRPXASM                                           *
+*                                                                     *
+*              Update ISHELL components for removal of HFS support:   *
+*                                                                     *
+*                  BPXWISH                                            *
+*                  BPXWP99                                            *
+*                  ISH                                                *
+*                  ISHELL                                             *
+*                                                                     *
+*              Fix packaging error with CUCI V1R7 where two members   *
+*              were incorrectly left off the distribution.            *
+*              ** Thanks to Colin Paice for reporting this issue! **  *
+*                                                                     *
+*                  USRHCALN                                           *
+*                  USRHFORC                                           *
+*                                                                     *
+*              Enhance documentation in the $MANHACK member to        *
+*              correct the assemble and bind JCL for ISRPX.           *
+*              ** Thanks to Colin Paice for reporting this issue! **  *
+*                                                                     *
+*                  $MANHACK                                           *
+*                                                                     *
+*              Enhance documentation in the $USRCONF member to        *
+*              add details for allocating the keyword file and        *
+*              clarify the installation instructions.                 *
+*              ** Thanks to Colin Paice for reporting this issue! **  *
+*                                                                     *
+*                  $USRCONF                                           *
+*                                                                     *
+*              Rename $README to $$README so it appears at the top of *
+*              the member list.  Add documentation to explain each    *
+*              usermod and the benefits of applying it.  Also add     *
+*              documentation to explain that CUCI must be installed   *
+*              as usermods or into libraries concatenated ahead of    *
+*              everything else in the logon proc.  CUCI cannot be     *
+*              implemented with LIBDEF.                               *
+*              ** Thanks to Colin Paice for reporting these items! ** *
+*                                                                     *
+*                  $$README                                           *
+*                                                                     *
+*              Fix issues and add capability to USRCCONF              *
+*                                                                     *
+*                - Modify USRCCONF dialog to detect that the keyword  *
+*                  dataset name was not customized in USR@KYWD and    *
+*                  issue an error message to that effect.             *
+*              ** Thanks to Colin Paice for reporting this issue! **  *
+*                                                                     *
+*                - Modify USR@KYWD to check for the existence of the  *
+*                  keyword file.  If it does not exist, then bypass   *
+*                  allocating the dataset to prevent allocation error *
+*                  messages when invoking ISPF.                       *
+*                                                                     *
+*                  USR@KYWD                                           *
+*                  USRCCONF                                           *
+*                  USRL00                                             *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2022/04/15   V1R7 release (Total IBM Ideas delivered to date - 03   *
+*                            Total RFEs delivered to date      - 39)  *
+*                                                                     *
+*              ZOS-I-3292 - ISPF Enhanced PANEL Edit Highlighting     *
+*              ZOS-I-2852 - ISPF Edit highlighting for R              *
+*              RFE 154404 - ISPF Edit highlighting for R              *
+*              ZOS-I-2174 - HILITE PLI - End-of-line Comment //       *
+*                           support                                   *
+*              RFE 144625 - HILITE PLI - End-of-line Comment //       *
+*                           support                                   *
+*                                                                     *
+*              Fix issues and add capability to HIGHLITE:             *
+*                                                                     *
+*                - Deliver Idea ZOS-I-3292 - ISPF Enhanced PANEL Edit *
+*                                            Highlighting             *
+*                - Deliver Idea ZOS-I-2852 - ISPF Edit highlighting   *
+*                                            for R                    *
+*                - Deliver RFE 154404 - ISPF Edit highlighting for R  *
+*                - Exploit OA62409, which externalized HILITE         *
+*                  settings into ISPF Z variables                     *
+*                - Deliver Idea ZOS-I-2174 - End-of-line Comment //   *
+*                  support by interrogating ZHILANG to                *
+*                  determine if the language is PLI                   *
+*                - Deliver RFE 144625 HILITE PLI - End-of-line        *
+*                  Comment // support by interrogating ZHILANG to     *
+*                  determine if the language is PLI                   *
+*                - Modify UMISRHIJ for new ++EXEC component USRPLICM  *
+*                  for PLI // End-of-Line comments                    *
+*                - Modify $MANHACJ to include new USRPLICM exec to    *
+*                  highlight // comments in PLI                       *
+*                - Interrogate ZHIPAREN to determine if parens should *
+*                  be highlighted for FLOWASM                         *
+*                - Add code to bypass highlighting Top of Data,       *
+*                  Bottom of Data, blank lines, and MSG, NOTE, etc.   *
+*                  lines.                                             *
+*                - Eliminate extraneous and unnecessary code for      *
+*                  performance.                                       *
+*                                                                     *
+*                  $HIGHLIT                                           *
+*                  $MANHACJ                                           *
+*                  ISREDDE2                                           *
+*                  ISREDDE4                                           *
+*                  UMISRHIJ                                           *
+*                  USREDDEX                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                  USRPLICM                                           *
+*                                                                     *
+*              Fix JCL errors in $MANHACJ when assembling ISRPXASM.   *
+*                  *** Thanks to Lionel Dyck for this update!! ***    *
+*                                                                     *
+*                  $MANHACJ                                           *
+*                                                                     *
+*              Fix error in ISR@PRIM which caused the USRCCONF        *
+*              keyword file name and output file content option not   *
+*              to be saved.                                           *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                                                                     *
+*              Alter language for message USRL001 to be more clear    *
+*              and to add R and PANELX language support.              *
+*                                                                     *
+*                  USRL00                                             *
+*                                                                     *
+*              Remove HFS from ISHELL for z/OS V2R5.                  *
+*                                                                     *
+*                  BPXWISH                                            *
+*                  BPXWP99                                            *
+*                  ISH                                                *
+*                  ISHELL                                             *
+*                                                                     *
+*              Clean up members to remove IBM version tags and merge  *
+*              z/OS V2R4 changes.                                     *
+*                                                                     *
+*                  BPXW99                                             *
+*                  ISRUAASE                                           *
+*                  ISRUDSL0                                           *
+*                  ISRUMVC                                            *
+*                  ISRUUDL0                                           *
+*                  ISRV01                                             *
+*                                                                     *
+*              Update ISRPXASM to include new PL/I keywords added by  *
+*              IBM. The new ISRPXASM in CUCI still contains 73 COBOL  *
+*              keywords and 27 PL/I keywords not defined in           *
+*              ISP.SISPSAMP(ISRPXASM).                                *
+*                                                                     *
+*                  ISRPXASM                                           *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2021/05/31   V1R6 release (Total RFEs delivered to date - 37)       *
+*                                                                     *
+*              RFE 149399 - ISPF Edit highlighting for ACS routines   *
+*                                                                     *
+*              Fix issues and add capability to HIGHLITE:             *
+*                                                                     *
+*                - Add panel ISREDDE4 for users who select "Remove    *
+*                  action bars in ISPF edit and view panels", and     *
+*                  provide documentation flowerbox for these options  *
+*                  *** Thanks to Bruce Koss for these updates!! ***   *
+*                  *** Thanks to Thomas Liu for ISREDDE4 also!! ***   *
+*                - Since HILITE OTHER is disabled in ASCII mode,      *
+*                  extend XMLASCII highlighting by adding support for *
+*                  comment blocks (turquoise), XML tags (pink), and   *
+*                  quoted strings (white)                             *
+*                - Remove deprecated HTML tags and empty tags from    *
+*                  XMLASCII keyword list                              *
+*                - Improve atr. and clr. stem variable                *
+*                  initialization                                     *
+*                - Improve code for performance                       *
+*                - Improve documentation                              *
+*                - Add SAS keywords, and do not translate '%' to a    *
+*                  blank for SAS                                      *
+*                  *** Thanks to Thomas Liu for the SAS updates!! *** *
+*                - Modify Go highlighting for ASCII-only editing,     *
+*                  including keywords, comments, parentheses, and     *
+*                  operators                                          *
+*                  *** Thanks to Thomas Liu for reporting this!!! *** *
+*                                                                     *
+*                  $HIGHLIT                                           *
+*                  ISREDDE2                                           *
+*                  ISREDDE4                                           *
+*                  UMISRHIJ                                           *
+*                  USREDDEX                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                                                                     *
+*              RFE 127392 - Support cd in udlist command              *
+*              RFE 121575 - Improve ISPF 3.17 by allowing CD on the   *
+*                           command line                              *
+*              RFE 112744 - Add SF as a synonym for the SRCHFOR       *
+*                           command                                   *
+*                                                                     *
+*                  $ISPCMDS                                           *
+*                  ISPCMDS                                            *
+*                  UMISPCMJ                                           *
+*                                                                     *
+*              Modifications for the USRCCONF dialog:                 *
+*                                                                     *
+*                - Add option 8 for Browse/View/EDIT/EDSET options    *
+*                - Move Miscellaneous Options to option 9             *
+*                - Add help panel for FORCE options                   *
+*                - Modify panel USRPCONF to show the current USRCCONF *
+*                  keyword file and its save date and save time       *
+*                - Add field-level help where missing on all panels   *
+*                - Change VER statements for FORCE fields to TRANS    *
+*                  statements                                         *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  USR@KYWD                                           *
+*                  USRCMOD                                            *
+*                  USRHCALN                                           *
+*                  USRHFORC                                           *
+*                  USRPCONF                                           *
+*                  USRPMOD                                            *
+*                  USRPMOD1                                           *
+*                  USRPMOD2                                           *
+*                  USRPMOD3                                           *
+*                  USRPMOD4                                           *
+*                  USRPMOD8                                           *
+*                  USRPMOD9                                           *
+*                  USRHFORC                                           *
+*                                                                     *
+*              Fix issue with 3.17 COMPARE, COPY, CREATE, REPLACE,    *
+*              with either the command by itself, or with an operand  *
+*              like COMPARE *.  The command would fail with the path  *
+*              prepended on the command line.  The command by itself  *
+*              or with an operand will now work.                      *
+*                                                                     *
+*                  USREDDEX                                           *
+*                                                                     *
+*              Fix packaging error with CUCI V1R5 where three members *
+*              were incorrectly left off the distribution.            *
+*              *** Thanks to Thomas Liu for reporting this issue! *** *
+*                                                                     *
+*                  USRUDSLI                                           *
+*                  USRUDSLP                                           *
+*                  USRUUID0                                           *
+*                                                                     *
+*              Fix packaging error with CUCI V1R5 where a member was  *
+*              not updated with new code.                             *
+*                                                                     *
+*                  BPXW99                                             *
+*                                                                     *
+*              Update all usermods to provide a ++VER for z/OS V2R4,  *
+*              which will be the default unless you select V2R3.      *
+*                                                                     *
+*                  UMBPXISJ                                           *
+*                  UMISCLMJ                                           *
+*                  UMISPCMJ                                           *
+*                  UMISRHIJ                                           *
+*                  UMISRPDJ                                           *
+*                  UMISRPXJ                                           *
+*                  UMISRUDJ                                           *
+*                  UMISRUUJ                                           *
+*                  UMISRVCJ                                           *
+*                  UMUSRCFJ                                           *
+*                                                                     *
+*              Add SHARE PDF presentation files for binary download:  *
+*                                                                     *
+*                  #SHR1703                                           *
+*                  #SHR1903                                           *
+*                  #SHR1908                                           *
+*                  #SHR2007                                           *
+*                  #SHR2101                                           *
+*                  #SHR2103                                           *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2021/02/26   V1R5 release (Total RFEs delivered to date - 33)       *
+*                                                                     *
+*              RFE 148758 - ISPF Edit highlighting for Kotlin         *
+*              RFE 148595 - ISPF Edit highlighting for XMLASCII       *
+*              RFE 148594 - ISPF Edit highlighting for SAS            *
+*              RFE 148593 - ISPF Edit highlighting for Perl           *
+*                                                                     *
+*              Fix issues and add capability to HIGHLITE:             *
+*                                                                     *
+*                - Add Kotlin to supported languages                  *
+*                - Add XMLASCII to supported languages                *
+*                - Add SAS to supported languages                     *
+*                - Add Perl to supported languages                    *
+*                - Clean up incorrect Fortran and TypeScript keywords *
+*                - Add checks for Fortran highlighting to bypass Top  *
+*                  of Data and Bottom of Data lines                   *
+*                - Make specific code changes for XMLASCII, since     *
+*                  HILITE OTHER is not available, eliminate blank     *
+*                  delimiting of tags for XMLASCII                    *
+*                - Use loops to assign atr. and clr. stem variables.  *
+*                  Will improve readability and greatly simplify      *
+*                  the process for adding languages.                  *
+*                  ***** Thanks to Robert Prins for this idea!! ***** *
+*                                                                     *
+*                  ISREDDE2                                           *
+*                  USREDDEX                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                                                                     *
+*              Remove panel Rexx code from ISRUDSL0 in order to       *
+*              minimize changes to ISRUDSL0:                          *
+*                                                                     *
+*                - Add exec USRUDSLI to process )INIT section of      *
+*                  ISRUDSL0                                           *
+*                - Add exec USRUDSLP to process )PROC section of      *
+*                  ISRUDSL0                                           *
+*                                                                     *
+*                  ISRUDSL0                                           *
+*                  USRUDSLI                                           *
+*                  USRUDSLP                                           *
+*                                                                     *
+*              Remove panel Rexx code from BPXW99, ISRUUDL0, and      *
+*              ISRUULP to consolidate code in each panel to call      *
+*              a common Rexx routine to reset the user's UID back to  *
+*              its default value.                                     *
+*                                                                     *
+*                - Add exec USRUUID0 to reset the user's UID back to  *
+*                  its default value                                  *
+*                                                                     *
+*                  BPXW99                                             *
+*                  ISRUUDL0                                           *
+*                  ISRUULP                                            *
+*                  USRUUID0                                           *
+*                                                                     *
+*              Add new elements USRUDSLI, USRUDSLP, and USRUUID0 to   *
+*              manual hack instructions and IEBCOPY job               *
+*                                                                     *
+*                  $MANHACK                                           *
+*                  $MANHACJ                                           *
+*                                                                     *
+*              Update 3.4 block delete usermod for new execs USRUDSLI *
+*              and USRUDSLP                                           *
+*                                                                     *
+*                  UMISRUDJ                                           *
+*                                                                     *
+*              Update reset SUPERUSER usermod for new exec USRUUID0   *
+*                                                                     *
+*                  UMISRUUJ                                           *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2021/01/12   V1R4 release (Total RFEs delivered to date - 29)       *
+*                                                                     *
+*              RFE 147822 - ISPF EDIT highlighting for TypeScript     *
+*              RFE 147823 - ISPF EDIT highlighting for PHP            *
+*              RFE 147824 - ISPF EDIT highlighting for JavaScript     *
+*              RFE 147825 - ISPF EDIT highlighting for Python         *
+*              RFE 147826 - ISPF EDIT highlighting for Ruby           *
+*              RFE 147827 - ISPF EDIT highlighting for JSON           *
+*                                                                     *
+*              Fix issues and add capability to HIGHLITE:             *
+*                                                                     *
+*                - Add new keywords for Java 9 and 10                 *
+*                - Add Java string and math methods                   *
+*                - Add TypeScript to supported languages              *
+*                - Add PHP to supported languages                     *
+*                - Add JavaScript to supported languages.             *
+*                - Correct errors in FLOWASM highlighting             *
+*                - Add code to bypass highlighting for "Top of Data"  *
+*                  and "Bottom of Data" lines                         *
+*                - Reduce ISREDDE2 customizations by removing Panel   *
+*                  Rexx from ISREDDE2 and creating Rexx exec USREDDEX *
+*                                                                     *
+*                  ISREDDE2                                           *
+*                  UMISRHIJ                                           *
+*                  USREDDEX                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                                                                     *
+*              Modify the following components to fix issues with     *
+*              USRCCONF dialog:                                       *
+*                                                                     *
+*                - add option 8, Miscellaneous ISPF Options           *
+*                - add support for ZKIT=LO Calendar Notepad           *
+*                - fix abend in 3.17 when ZULARR, ZMTFARR, or ZMTMARR *
+*                  are stored with nulls                              *
+*                - fix error in Calendar Colors when processing       *
+*                  existing keyword file                              *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  UMUSRCFJ                                           *
+*                  USR@KYWD                                           *
+*                  USRCMOD                                            *
+*                  USRPMOD                                            *
+*                  USRPMOD8                                           *
+*                                                                     *
+*              Add documentation and JCL to manually hack in CUCI     *
+*                                                                     *
+*                  $MANHACJ                                           *
+*                  $MANHACK                                           *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2020/07/12   V1R3 release (Total RFEs delivered to date - 23)       *
+*                                                                     *
+*              RFE 143505 - Add missing ISPF options to ISPCCONF      *
+*              RFE  42655 - ISPCCONF - Add PFKey definitions          *
+*                                                                     *
+*                  ISR@PRIM                                           *
+*                  USR@KYWD                                           *
+*                  USRCCONF                                           *
+*                  USRCCVWK                                           *
+*                  USRCMOD                                            *
+*                  USRPCONF                                           *
+*                  USRPMOD                                            *
+*                  USRPMODQ                                           *
+*                  USRPMOD1                                           *
+*                  USRPMOD2                                           *
+*                  USRPMOD3                                           *
+*                  USRPMOD4                                           *
+*                  USRUMNO2                                           *
+*                  USRUULO2                                           *
+*                  USR0Y002                                           *
+*                  USR0Y004                                           *
+*                  USR0Y007                                           *
+*                                                                     *
+*              RFE 144196 - ISPF Edit Highlighting for FLOWASM        *
+*              RFE 143504 - ISPF Edit Highlighting for Google GO      *
+*                                                                     *
+*                  $HIGHLIT                                           *
+*                  ISREDDE2                                           *
+*                  UMISRHIJ                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                                                                     *
+*              RFE 143155 - Modify SISPSAMP member ISRPXASM to add    *
+*                           missing COBOL and PL/I keywords for       *
+*                           highlighting (73 COBOL and 140 PL/I       *
+*                           keywords added)                           *
+*                                                                     *
+*                  ISRPXASM                                           *
+*                  UMISRPXJ                                           *
+*                                                                     *
+*              RFE 136261 - PDSE V2 allocated under ISPF              *
+*                                                                     *
+*                  ISRUAASE                                           *
+*                  ISRV01                                             *
+*                                                                     *
+*              RFE 132595 - VSCR for z/OS move ISPF members related   *
+*                           to SCLM from LPA to LOAD                  *
+*                                                                     *
+*                  UMISCLMJ                                           *
+*                                                                     *
+*              RFE  40668 - Prime ISRUMVC 'other dataset' field with  *
+*                           current dataset for Copy/Move             *
+*                                                                     *
+*                  ISRUMVC                                            *
+*                  UMISRVCJ                                           *
+*                                                                     *
+*              Add new doc members                                    *
+*                                                                     *
+*                  $MANHACK                                           *
+*                  $README                                            *
+*                  $USRCONF                                           *
+*                                                                     *
+*              Clean up and enhance doc members                       *
+*                                                                     *
+*                  $CHANGES                                           *
+*                  $FILE967                                           *
+*                  $ISPCMDS                                           *
+*                  $34DELET                                           *
+*                                                                     *
+*              Clean up and enhance usermods                          *
+*                                                                     *
+*                  UMISCLMJ                                           *
+*                  UMISRPDJ                                           *
+*                  UMISRPXJ                                           *
+*                  UMISRVCJ                                           *
+*                  UMUSRCFJ                                           *
+*                                                                     *
+*              Clean up and enhance usermods                          *
+*                                                                     *
+*                  BPXWISH                                            *
+*                  BPXW99                                             *
+*                  ISRUDSL0                                           *
+*                  ISRUUDL0                                           *
+*                  ISRUULP                                            *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2019/01/28   V1R2 release (Total RFEs delivered to date - 15)       *
+*                                                                     *
+*              Modify the following components to fix a bug when      *
+*              resetting UID(0) to user default UID upon exiting      *
+*              ISHELL:                                                *
+*                                                                     *
+*                  BPXWP99                                            *
+*                  BPXWISH                                            *
+*                  ISH                                                *
+*                  ISHELL                                             *
+*                  UMBPXISJ                                           *
+*                                                                     *
+*              RFE 122097 - ISPF EDIT highlighting for FORTRAN        *
+*              RFE 117386 - ISPF EDIT highlighting for SQL            *
+*              RFE  79228 - ISPF EDIT highlighting for SQL            *
+*              RFE  57717 - ISPF EDIT highlighting for SQL            *
+*              RFE  37007 - ISPF EDIT highlighting for SQL            *
+*              RFE 107568 - ISPF EDIT highlighting for CARLa          *
+*              RFE  83017 - ISPF EDIT highlighting for shell script   *
+*              RFE 139412 - ISPF EDIT highlighting for Java           *
+*              RFE  83016 - ISPF EDIT highlighting for Java           *
+*                                                                     *
+*              RFE 112741 - Simplify UNIX file access in ISPF by      *
+*                           prepending current Unix directory to      *
+*                           filename for COMPARE, COPY, CREATE,       *
+*                           and REPLACE commands (BROWSE, EDIT, and   *
+*                           VIEW require member names and continue    *
+*                           to issue "Invalid member name" error      *
+*                           message)                                  *
+*                                                                     *
+*                  ISREDDE2                                           *
+*                  UMISREDJ                                           *
+*                  USRHILIT                                           *
+*                  USRL00                                             *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2018/12/24   V1R1 release (Total RFEs delivered to date - 5)        *
+*                                                                     *
+*              RFE 128561 - ISPF OPT 3.4 block delete commands should *
+*                           delete VSAM cluster, and bypass DATA and  *
+*                           INDEX components without stopping         *
+*                                                                     *
+*                  ISRUDSL0                                           *
+*                  UMISRUDJ                                           *
+*                  USRDEL34                                           *
+*                                                                     *
+*              RFE 120120 - ISPF 3.17 Should Reset UID on Exit Back   *
+*                           to User UID from SU                       *
+*              RFE 102407 - ISPF UDLIST - for reset to users default  *
+*                           UID on exit                               *
+*                                                                     *
+*                  ISRUUDL0                                           *
+*                  ISRUULP                                            *
+*                  UMISRUUJ                                           *
+*                                                                     *
+*              Add the following components to reset UID(0) to user   *
+*              default UID upon exiting ISHELL:                       *
+*                                                                     *
+*                  BPXWP99                                            *
+*                  UMBPXISJ                                           *
+*                                                                     *
+*              Modify UMISPCMJ for current ISPF FMID HIF7R02          *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+* 2017/11/16   V1R0 release (Total RFEs delivered to date - 2)        *
+*                                                                     *
+*              Inaugural release of CBT Usermod Collection for ISPF   *
+*              (CUCI)                                                 *
+*                                                                     *
+*              RFE 112749 - Update ISPCMDS table entries for Minimum  *
+*                           TRUNC values (e.g. UDLIST should be 3)    *
+*              RFE 112745 - Add DSL as a synonym for the DSLIST       *
+*                           command                                   *
+*                                                                     *
+*                   ISPCMDS                                           *
+*                   UMISPCMJ                                          *
+*                                                                     *
+***********************************************************************

@@ -1,0 +1,143 @@
+//jobname  JOB 'CUCI $MANHACJ',
+//             CLASS=A,
+//             NOTIFY=&SYSUID,
+//             MSGCLASS=X,REGION=0M,MSGLEVEL=(1,1)
+//*********************************************************************
+//* Change 'jobname' to valid jobname. Change 'yourhlq' to valid HLQ.
+//*********************************************************************
+//DELETEIT EXEC PGM=IEFBR14
+//DD1      DD DSN=yourhlq.CUCI.EXEC,DISP=(MOD,DELETE,DELETE),
+//            UNIT=SYSALLDA,SPACE=(TRK,1)
+//DD2      DD DSN=yourhlq.CUCI.ISPMLIB,DISP=(MOD,DELETE,DELETE),
+//            UNIT=SYSALLDA,SPACE=(TRK,1)
+//DD3      DD DSN=yourhlq.CUCI.ISPPLIB,DISP=(MOD,DELETE,DELETE),
+//            UNIT=SYSALLDA,SPACE=(TRK,1)
+//DD4      DD DSN=yourhlq.CUCI.ISPTLIB,DISP=(MOD,DELETE,DELETE),
+//            UNIT=SYSALLDA,SPACE=(TRK,1)
+//*********************************************************************
+//COPYEXEC EXEC PGM=IEBCOPY
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD DISP=SHR,DSN=yourhlq.CBT.FILE967  <== CBT FILE
+//SYSUT2   DD DSN=yourhlq.CUCI.EXEC,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,
+//            SPACE=(CYL,(1,1,45))
+//SYSIN    DD *
+ COPY INDD=SYSUT1,OUTDD=SYSUT2
+ S M=BPXWISH
+ S M=ISH
+ S M=ISHELL
+ S M=USR@KYWD
+ S M=USRCCONF
+ S M=USRCCVWK
+ S M=USRCMOD
+ S M=USRDEL34
+ S M=USREDDEM
+ S M=USREDDEX
+ S M=USRHILIT
+ S M=USRPLICM
+ S M=USRUDSLI
+ S M=USRUDSLP
+ S M=USRUMVC
+ S M=USRUUID0
+/*
+//*********************************************************************
+//COPYMLIB EXEC PGM=IEBCOPY
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD DISP=SHR,DSN=yourhlq.CBT.FILE967
+//SYSUT2   DD DSN=yourhlq.CUCI.ISPMLIB,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,
+//            SPACE=(CYL,(1,1,45))
+//SYSIN    DD *
+ COPY INDD=SYSUT1,OUTDD=SYSUT2
+ S M=ISRV01
+ S M=USRL00
+/*
+//*********************************************************************
+//COPYPLIB EXEC PGM=IEBCOPY
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD DISP=SHR,DSN=yourhlq.CBT.FILE967
+//SYSUT2   DD DSN=yourhlq.CUCI.ISPPLIB,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,
+//            SPACE=(CYL,(1,1,45))
+//*********************************************************************
+//* This job is designed to load panel members for z/OS V2R5.  Use    *
+//* the following COPY statements if running z/OS V2R4, and remove    *
+//* the default statements.  This is necessary due to the removal of  *
+//* the ISPF Client/Server interface at z/OS V2R5.  The panels at     *
+//* the V2R5 level removed the ISPF C/S drop-down menu option.  These *
+//* members suffixed with '24' still have the ISPF C/S dropdown menu. *
+//*                                                                   *
+//* S M=((ISR@PR24,ISR@PRIM))                                         *
+//* S M=((ISRED224,ISREDDE2))                                         *
+//* S M=((ISRED424,ISREDDE4))                                         *
+//* S M=((ISRUDS24,ISRUDSL0))                                         *
+//* S M=((ISRUUD24,ISRUUDL0))                                         *
+//* S M=((ISRUUL24,ISRUULP))                                          *
+//*********************************************************************
+//SYSIN    DD *
+ COPY INDD=SYSUT1,OUTDD=SYSUT2
+ S M=BPXWP99
+ S M=ISR@PRIM
+ S M=ISREDDE2
+ S M=ISREDDE4
+ S M=ISRUAASE
+ S M=ISRUDSL0
+ S M=ISRUMVC
+ S M=ISRUUDL0
+ S M=ISRUULP
+ S M=USRHCALN
+ S M=USRHFORC
+ S M=USRPCONF
+ S M=USRPMOD
+ S M=USRPMODQ
+ S M=USRPMOD1
+ S M=USRPMOD2
+ S M=USRPMOD3
+ S M=USRPMOD4
+ S M=USRPMOD8
+ S M=USRPMOD9
+ S M=USRUMNO2
+ S M=USRUULO2
+ S M=USR0Y002
+ S M=USR0Y004
+ S M=USR0Y007
+/*
+//*********************************************************************
+//COPYTLIB EXEC PGM=IEBCOPY
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD DISP=SHR,DSN=yourhlq.CBT.FILE967
+//SYSUT2   DD DSN=yourhlq.CUCI.ISPTLIB,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,
+//            SPACE=(CYL,(1,1,45))
+//SYSIN    DD *
+ COPY INDD=SYSUT1,OUTDD=SYSUT2
+ S M=ISPCMDS
+/*
+//*********************************************************************
+//ASM      EXEC  PGM=ASMA90,REGION=0M,
+//             PARM=(NORLD,RENT,TERM,OBJ,
+//             'XREF(SHORT,UNREFS),SIZE(MAX,ABOVE)',
+//             'FLAG(PAGE0)')
+//SYSLIN   DD DISP=SHR,DSN=yourhlq.CBT.FILE967(ISRPXOBJ)
+//SYSPRINT DD SYSOUT=*
+//SYSTERM  DD SYSOUT=*
+//SYSIN    DD DISP=SHR,DSN=yourhlq.CBT.FILE967(ISRPXASM)
+//SYSLIB   DD DSN=SYS1.MODGEN,DISP=SHR
+//         DD DSN=SYS1.MACLIB,DISP=SHR
+//*********************************************************************
+//LINK     EXEC PGM=IEWL,PARM='RENT,REUS,LIST,MAP',REGION=512K
+//SYSPRINT DD SYSOUT=*
+//OBJECT   DD DISP=SHR,DSN=yourhlq.CBT.FILE967(ISRPXOBJ)
+//SYSUT1   DD UNIT=SYSALLDA,SPACE=(CYL,(2,2)),DISP=NEW
+//SYSLMOD  DD DISP=SHR,DSN=yourhlq.ISPF.ISPLLIB
+//SYSLIN   DD *
+ ORDER ISRPX
+ ENTRY ISRPX
+ INCLUDE OBJECT
+  MODE AMODE(31),RMODE(ANY)
+ NAME ISRPX(R)
+/*

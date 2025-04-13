@@ -1,0 +1,33 @@
+/* rexx */
+/*********************************************************************/
+/* This exec will process the dataset name on the ISRUMVC panel in   */
+/* order to prime the other dataset field.                           */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2023/12/05 Conley         If zcldsn includes a member name,       */
+/*                           remove it since the member name in the  */
+/*                           other dataset field will get ISRU535    */
+/*                           Member name not allowed.                */
+/* 2023/07/04 Conley         Initial coding.                         */
+/*********************************************************************/
+call isprexpx('I')
+/*********************************************************************/
+/* Check ZMMCDSN, and if it's equal to 46 nulls (x'00'), prime it    */
+/* with LCLDSN.                                                      */
+/*********************************************************************/
+if (zmmcdsn = copies('00'x,46) | zmmcdsn = '') then
+   do
+      paren = pos('(',zcldsn)
+      if paren = 0 then
+         zmmcdsn = zcldsn
+      else
+         do
+            parse var zcldsn 1 zmmcdsn =(paren) .
+            zmmcdsn = zmmcdsn"'"
+         end
+   end
+call isprexpx('T')
+exit

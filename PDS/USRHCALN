@@ -1,0 +1,24 @@
+)PANEL KEYLIST (ISRHELP ISR)
+)ATTR
+   @ AREA(SCRL) EXTEND(ON)
+   % TYPE(ET)
+   _ TYPE(NEF) PAD(USER) CAPS(ON)
+   + TYPE(NT)
+   ` TYPE(SAC)
+)BODY EXPAND(\\)
+%TUTORIAL \-\ Calendar Options \-\ TUTORIAL
+%OPTION  ===>_ZCMD                                                             +
+@SAREA1                                                                        @
+)AREA SAREA1
+%
++Scroll Button   - Specify color of "<     Calendar     >" line
+ Heading Date    - Specify color of "  <month>   <YYYY>  " line
+ Heading Text    - Specify color of "Su Mo Tu We Th Fr Sa" line
+ Weekday         - Specify color of week days in the calendar
+ Saturday/Sunday - Specify color of weekend days in the calendar
+ Current Day     - Specify color of current day in the calendar (reverse video)
+
+ Start date      - Specify starting date for the week (Sunday, Monday, Saturday)
+ Time format     - Specify 12-hour (1:00PM) or 24-hour (13:00) time format
+)PROC
+)END

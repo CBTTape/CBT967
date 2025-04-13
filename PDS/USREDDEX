@@ -1,0 +1,222 @@
+/* rexx */
+/*********************************************************************/
+/* This exec will process the HIGHLITE command when entered from     */
+/* the modified panels (ISREDDE2 or ISREDDE4), and also prepend the  */
+/* Unix directory for COMPARE, COPY, CREATE and REPLACE commands.    */
+/*                                                                   */
+/* Change Log                                                        */
+/*                                                                   */
+/*    Date    Name           Description                             */
+/* ---------- -------------- --------------------------------------- */
+/* 2024/12/11 Conley         Add code to detect a quoted z/OS        */
+/*                           dataset name and not prepend the Unix   */
+/*                           path.                                   */
+/* 2023/07/04 Conley         Minor editing changes for readability.  */
+/* 2022/03/25 Conley         Add PANELX for extended panel           */
+/*                           highlighting to supported languages.    */
+/* 2021/08/16 Conley         Add R to supported languages.           */
+/* 2021/03/19 Conley         Add ACS to supported languages.         */
+/* 2021/03/01 Conley         Fix issue with 3.17 COMPARE, COPY,      */
+/*                           CREATE, REPLACE, with either the        */
+/*                           command by itself, or with an operand   */
+/*                           like COMPARE *.  The command would fail */
+/*                           with the path prepended on the command  */
+/*                           line.  The command by itself or with an */
+/*                           operand will now work.                  */
+/* 2021/02/15 Conley         Add Kotlin to supported languages.      */
+/* 2021/02/07 Conley         Add XMLASCII to supported languages.    */
+/* 2021/01/19 Conley         Add Perl to supported languages.        */
+/*                           Add SAS to supported languages.         */
+/* 2020/10/27 Conley         Add TypeScript to supported languages.  */
+/* 2020/10/26 Conley         Add PHP to supported languages.         */
+/* 2020/10/23 Conley         Remove this code from panel ISREDDE2    */
+/*                           and create standalone panel exit        */
+/*                           USREDDEX.                               */
+/*                           Add JavaScript as a supported language. */
+/*********************************************************************/
+/* NOTES:  1) Modules affected/used                                  */
+/*            - USRHILIT ... REXX program (Highlight new languages)  */
+/*            - USREDDEX ... REXX program (HIGHLITE, prepend path)   */
+/*            - ISREDDE2 ... ISPF panel (Action Bar)                 */
+/*            - ISREDDE4 ... ISPF panel (No Action Bar)              */
+/*            - USRL00 ..... ISPF messages (Valid languages)         */
+/*         2) To change which Edit panel is used (Action Bar         */
+/*            ISREDDE2 or No Action Bar ISREDDE4), edit a member,    */
+/*            type in EDITSET (EDSET), and select ("/") the below    */
+/*            parameter:                                             */
+/*                                                                   */
+/*            _ Remove action bars in ISPF edit and view panels      */
+/*                                                                   */
+/*            Selecting this parm will present ISREDDE4 as the edit  */
+/*            panel, deselecting it will present ISREDDE2.           */
+/*                                                                   */
+/*            Thanks to Bruce Koss for pointing out that ISREDDE4    */
+/*            should also be supported for CUCI highlighting.        */
+/*********************************************************************/
+call isprexpx('I')
+/*********************************************************************/
+/* Perform the following:                                            */
+/*                                                                   */
+/* 1.  Extract the language and options from HIGHLITE command.       */
+/* 2.  For Unix files, prepend directory for COMPARE, COPY, CREATE,  */
+/*     and REPLACE commands.                                         */
+/*********************************************************************/
+if zcmd <> '' then
+   do
+      parse upper var zcmd zcmd1u zcmd2u
+      parse var zcmd zcmd1 zcmd2
+      if zcmd1u = 'HIGHLITE' then
+         do
+            usrhicmd = 'YES'
+            select
+/*********************************************************************/
+/* HIGHLITE OFF should turn everything off, so set usrhilng to OFF,  */
+/* and turn off both brace and bracket highlighting.                 */
+/*********************************************************************/
+               when (zcmd2u = 'OFF') then
+                  do
+                     usrhilng = 'OFF'
+                     usrhibrc = 'NO'
+                     usrhibrk = 'NO'
+                  end
+/*********************************************************************/
+/* HIGHLITE BRACE acts as a toggle.  If YES, set to NO, otherwise    */
+/* set to YES.                                                       */
+/*********************************************************************/
+               when (zcmd2u = 'BRACE') then
+                  if usrhibrc = 'YES' then
+                     usrhibrc = 'NO'
+                  else
+                     usrhibrc = 'YES'
+/*********************************************************************/
+/* HIGHLITE BRACKET acts as a toggle.  If YES, set to NO, otherwise  */
+/* set to YES.                                                       */
+/*********************************************************************/
+               when (zcmd2u = 'BRACKET') then
+                   if usrhibrk = 'YES' then
+                      usrhibrk = 'NO'
+                   else
+                      usrhibrk = 'YES'
+/*********************************************************************/
+/* HIGHLITE DISPLAY will issue say statements to display current     */
+/* HIGHLITE settings.                                                */
+/*********************************************************************/
+               when (zcmd2u = 'DISPLAY' | zcmd2u = 'DISP') then
+                   call highdisp
+/*********************************************************************/
+/* HIGHLITE ? issues say statements for help.                        */
+/*********************************************************************/
+               when (zcmd2u = 'HELP' | zcmd2u = '?') then
+                   call highhelp
+/*********************************************************************/
+/* If not BRACE or BRACKET, take the parm on HIGHLITE as the         */
+/* language.  Check for a valid language and issue error message if  */
+/* incorrect.                                                        */
+/*********************************************************************/
+               otherwise
+                  do
+                     usrhilng = zcmd2u
+                     select
+                        when (usrhilng = 'ACS'        |,
+                              usrhilng = 'CARLA'      |,
+                              usrhilng = 'FLOWASM'    |,
+                              usrhilng = 'FORTRAN'    |,
+                              usrhilng = 'GO'         |,
+                              usrhilng = 'JAVA'       |,
+                              usrhilng = 'JAVASCRIPT' |,
+                              usrhilng = 'JSON'       |,
+                              usrhilng = 'KOTLIN'     |,
+                              usrhilng = 'PANELX'     |,
+                              usrhilng = 'PERL'       |,
+                              usrhilng = 'PHP'        |,
+                              usrhilng = 'PYTHON'     |,
+                              usrhilng = 'R'          |,
+                              usrhilng = 'RUBY'       |,
+                              usrhilng = 'SAS'        |,
+                              usrhilng = 'SHELL'      |,
+                              usrhilng = 'SQL'        |,
+                              usrhilng = 'TYPESCRIPT' |,
+                              usrhilng = 'XMLASCII')   then
+                           do
+/*********************************************************************/
+/* Turn on brace and bracket highlighting for Go, Java, JavaScript,  */
+/* JSON, Kotlin, Perl, PHP, TypeScript, and XMLASCII.                */
+/*********************************************************************/
+                              if (usrhilng = 'GO'         |,
+                                  usrhilng = 'JAVA'       |,
+                                  usrhilng = 'JAVASCRIPT' |,
+                                  usrhilng = 'JSON'       |,
+                                  usrhilng = 'KOTLIN'     |,
+                                  usrhilng = 'PERL'       |,
+                                  usrhilng = 'PHP'        |,
+                                  usrhilng = 'TYPESCRIPT' |,
+                                  usrhilng = 'XMLASCII')  then
+                                 do
+                                    usrhibrc = 'YES'
+                                    usrhibrk = 'YES'
+                                 end
+                           end
+                        otherwise
+/*********************************************************************/
+/* Set "Invalid Language" message.                                   */
+/*********************************************************************/
+                           usrmsgid = 'USRL001'
+                     end
+                  end
+            end
+/*********************************************************************/
+/* Blank out zcmd to prevent "Invalid command" message.              */
+/*********************************************************************/
+            zcmd = ''
+         end
+      else
+         if ((zcmd1u = 'COPY'    |,
+              zcmd1u = 'COMPARE' |,
+              zcmd1u = 'COMP'    |,
+              zcmd1u = 'CREATE'  |,
+              zcmd1u = 'CRE'     |,
+              zcmd1u = 'REPLACE' |,
+              zcmd1u = 'REPL')   &,
+             (zpthnm <> ''       &,
+              zcmd2  <> ''       &,
+              zcmd2  <> '*'      &,
+              substr(zcmd2,1,1) <> '/' &,
+              substr(zcmd2,1,1) <> "'")) then
+            zcmd = zcmd1 zpthnm || '/' || zcmd2
+   end
+call isprexpx('T')
+exit
+highdisp : procedure expose usrhilng usrhibrc usrhibrk
+say 'HIGHLITE settings'
+say ''
+say 'HIGHLITE language  =' usrhilng
+say 'HIGHLITE braces    =' usrhibrc
+say 'HIGHLITE brackets  =' usrhibrk
+return
+highhelp : procedure
+say 'To use extended language highlighting, issue the HIGHLITE command'
+say 'with the following syntax:'
+say ''
+say 'HIGHLITE language | OFF'
+say ''
+say 'language = {ACS | CARLA | FLOWASM | FORTRAN | GO | JAVA | JAVASCRIPT |'
+say            'JSON | KOTLIN | PANELX | PERL | PHP | PYTHON | R | RUBY | SAS |'
+say            'SHELL | SQL | TYPESCRIPT | XMLASCII}, OFF turns off extended '
+say            'language highlighting.'
+say ''
+say 'HIGHLITE BRACE toggles brace highlighting on and off.'
+say ''
+say 'HIGHLITE BRACKET toggles bracket highlighting on and off.'
+say ''
+say 'Note:  HIGHLITE BRACE/BRACKET may show incomplete pairs if opening/closing'
+say '       brace/bracket is off the screen.'
+say ''
+say 'HIGHLITE DISPLAY | DISP shows current state of HIGHLITE options.'
+say ''
+say 'HIGHLITE HELP | ? displays this HELP text.'
+say ''
+say 'Note:  NULLS ON STD is required for CUCI HIGHLITE to function correctly.'
+say '       Invoking the HIGHLITE command will automatically set NULLS ON STD.'
+say '       If you use NULLS ON ALL elsewhere in EDIT, you will need to issue'
+say '       NULLS ON ALL after exiting CUCI HIGHLITE.'
+return
